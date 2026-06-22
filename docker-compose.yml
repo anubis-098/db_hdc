@@ -7,12 +7,14 @@ services:
     volumes:
       - ./backend:/app
       - .:/workspace:ro
+      - ./uploads:/uploads
       - "D:/OneDrive/OneDrive - CJWorld/HDC_IT/DashBoard:/onedrive-dashboard:ro"
     environment:
       - ENV=development
       - PROJECT_ROOT=/workspace
       - HOST_DASHBOARD_PATH=D:/OneDrive/OneDrive - CJWorld/HDC_IT/DashBoard
       - CONTAINER_DASHBOARD_PATH=/onedrive-dashboard
+      - UPLOAD_ROOT=/uploads
       - INBOUND_SOURCE=/onedrive-dashboard/Inbound.xlsx
       - PICK_SOURCE=/onedrive-dashboard/Pick.xlsx
       - OUTBOUND_SOURCE=/onedrive-dashboard/Outbound.xlsx

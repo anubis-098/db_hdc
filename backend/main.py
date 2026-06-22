@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks, Response
+from fastapi import FastAPI, BackgroundTasks, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sharepoint import download_excel_from_link, get_excel_sheet_names_from_source, get_source_info, read_excel_sheet_from_source
 from processor import (
@@ -18,6 +18,7 @@ from processor import (
 )
 import os
 import json
+import re
 from pathlib import Path
 from datetime import datetime
 import uuid
@@ -31,16 +32,25 @@ SYSTEM_ID = str(uuid.uuid4())
 EXCEL_URLS = os.getenv("EXCEL_URLS", "")
 USE_MOCK = os.getenv("USE_MOCK", "false").lower() == "true"
 SETTINGS_PATH = Path(os.getenv("SETTINGS_PATH", "data_sources.json"))
+UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", "/uploads"))
 DEFAULT_DATA_SOURCES = {
     "inbound": os.getenv("INBOUND_SOURCE", "example/Inbound.xlsx"),
     "pick": os.getenv("PICK_SOURCE", "example/HLE-13-06-26.xlsx"),
     "outbound": os.getenv("OUTBOUND_SOURCE", "example/Dispatch Report.xlsx"),
+}
+SOURCE_FILE_NAMES = {
+    "inbound": "Inbound.xlsx",
+    "pick": "Pick.xlsx",
+    "outbound": "Outbound.xlsx",
 }
 
 class DataSourceSettings(BaseModel):
     inbound: str = ""
     pick: str = ""
     outbound: str = ""
+
+class ActiveUploadClient(BaseModel):
+    client_id: str
 
 # Cache แบบง่าย
 cached_data = {"status": "waiting", "data": [], "system_id": SYSTEM_ID}
@@ -66,6 +76,55 @@ def save_data_sources(settings: DataSourceSettings) -> dict:
     with SETTINGS_PATH.open("w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
     return data
+
+def normalize_client_id(client_id: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "-", client_id.strip()).strip("-").lower()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="client_id is required")
+    if len(normalized) > 64:
+        raise HTTPException(status_code=400, detail="client_id is too long")
+    return normalized
+
+def get_upload_client_dir(client_id: str) -> Path:
+    safe_client_id = normalize_client_id(client_id)
+    return UPLOAD_ROOT / safe_client_id
+
+def get_upload_client_sources(client_id: str) -> dict:
+    client_dir = get_upload_client_dir(client_id)
+    return {
+        key: str(client_dir / filename)
+        for key, filename in SOURCE_FILE_NAMES.items()
+    }
+
+def set_active_upload_client(client_id: str) -> dict:
+    sources = get_upload_client_sources(client_id)
+    save_data_sources(DataSourceSettings(**sources))
+    return sources
+
+def get_file_info(path: Path) -> dict:
+    if not path.exists() or not path.is_file():
+        return {"exists": False}
+    stat = path.stat()
+    return {
+        "exists": True,
+        "size": stat.st_size,
+        "modified_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+def list_upload_clients() -> list[dict]:
+    if not UPLOAD_ROOT.exists():
+        return []
+
+    clients = []
+    for client_dir in sorted(path for path in UPLOAD_ROOT.iterdir() if path.is_dir()):
+        clients.append({
+            "client_id": client_dir.name,
+            "files": {
+                key: get_file_info(client_dir / filename)
+                for key, filename in SOURCE_FILE_NAMES.items()
+            },
+        })
+    return clients
 
 def empty_dashboard_data() -> dict:
     return {
@@ -254,6 +313,85 @@ def set_data_sources(settings: DataSourceSettings):
     data = save_data_sources(settings)
     update_cache()
     return {"status": "success", "data": data}
+
+@app.get("/settings/upload-clients")
+def get_upload_clients():
+    active_sources = load_data_sources()
+    active_client = ""
+    upload_root_text = str(UPLOAD_ROOT)
+
+    for source in active_sources.values():
+        try:
+            source_path = Path(source)
+            if UPLOAD_ROOT in source_path.parents:
+                active_client = source_path.relative_to(UPLOAD_ROOT).parts[0]
+                break
+        except (ValueError, IndexError):
+            continue
+
+    return {
+        "status": "success",
+        "upload_root": upload_root_text,
+        "active_client": active_client,
+        "clients": list_upload_clients(),
+    }
+
+@app.post("/settings/upload-client")
+def set_upload_client(payload: ActiveUploadClient):
+    sources = set_active_upload_client(payload.client_id)
+    update_cache()
+    return {
+        "status": "success",
+        "client_id": normalize_client_id(payload.client_id),
+        "data_sources": sources,
+        "clients": list_upload_clients(),
+    }
+
+@app.post("/upload/{source_key}")
+async def upload_excel_source(source_key: str, client_id: str = Form(...), file: UploadFile = File(...)):
+    source_key = source_key.lower().strip()
+    if source_key not in SOURCE_FILE_NAMES:
+        raise HTTPException(status_code=400, detail="source_key must be inbound, pick, or outbound")
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
+
+    client_dir = get_upload_client_dir(client_id)
+    client_dir.mkdir(parents=True, exist_ok=True)
+    target_path = client_dir / SOURCE_FILE_NAMES[source_key]
+    temp_path = target_path.with_suffix(".xlsx.tmp")
+
+    total_size = 0
+    max_size = 50 * 1024 * 1024
+    try:
+        with temp_path.open("wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > max_size:
+                    raise HTTPException(status_code=413, detail="File is larger than 50MB")
+                output.write(chunk)
+
+        temp_path.replace(target_path)
+    finally:
+        await file.close()
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+    sources = set_active_upload_client(client_id)
+    update_cache()
+    return {
+        "status": "success",
+        "client_id": normalize_client_id(client_id),
+        "source_key": source_key,
+        "filename": target_path.name,
+        "file_info": get_file_info(target_path),
+        "data_sources": sources,
+        "clients": list_upload_clients(),
+    }
 
 @app.post("/refresh")
 def refresh_data(background_tasks: BackgroundTasks):

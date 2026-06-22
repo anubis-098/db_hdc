@@ -7,12 +7,14 @@ services:
     volumes:
       - ./backend:/app
       - .:/workspace:ro
+      - ${UPLOAD_DATA_DIR:-/opt/db-hdc/uploads}:/uploads
       - ${DASHBOARD_DATA_DIR:-/opt/db-hdc/data}:/onedrive-dashboard:ro
     environment:
       - ENV=production
       - PROJECT_ROOT=/workspace
       - HOST_DASHBOARD_PATH=${DASHBOARD_DATA_DIR:-/opt/db-hdc/data}
       - CONTAINER_DASHBOARD_PATH=/onedrive-dashboard
+      - UPLOAD_ROOT=/uploads
       - INBOUND_SOURCE=/onedrive-dashboard/Inbound.xlsx
       - PICK_SOURCE=/onedrive-dashboard/Pick.xlsx
       - OUTBOUND_SOURCE=/onedrive-dashboard/Outbound.xlsx

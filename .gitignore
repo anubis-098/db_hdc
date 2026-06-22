@@ -16,6 +16,7 @@ __pycache__/
 .env
 .env.*
 backend/data_sources.json
+uploads/
 
 # Local Excel data files
 *.xlsx

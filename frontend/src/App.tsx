@@ -129,6 +129,17 @@ const SLIDE_INTERVAL_SECONDS = 30;
 
 type DataSourceKey = 'inbound' | 'pick' | 'outbound';
 
+type UploadFileInfo = {
+  exists: boolean;
+  size?: number;
+  modified_at?: string;
+};
+
+type UploadClient = {
+  client_id: string;
+  files: Record<DataSourceKey, UploadFileInfo>;
+};
+
 interface DataSourceSettings {
   inbound: string;
   pick: string;
@@ -145,6 +156,11 @@ const DEFAULT_DATA_SOURCES: DataSourceSettings = {
   pick: '/onedrive-dashboard/Pick.xlsx',
   outbound: '/onedrive-dashboard/Outbound.xlsx',
 };
+const DATA_SOURCE_ITEMS: { key: DataSourceKey; label: string; placeholder: string; fileName: string }[] = [
+  { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Inbound.xlsx' },
+  { key: 'pick', label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Pick.xlsx' },
+  { key: 'outbound', label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Outbound.xlsx' },
+];
 const CHART_ANIMATION = {
   enabled: true,
   easing: 'easeinout',
@@ -201,6 +217,10 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(getInitialDarkMode);
   const [dataSources, setDataSources] = useState<DataSourceSettings>(getInitialDataSources);
   const [isSavingDataSources, setIsSavingDataSources] = useState(false);
+  const [uploadClientId, setUploadClientId] = useState('hdc-main');
+  const [uploadClients, setUploadClients] = useState<UploadClient[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<SyncStatus>({ tone: 'idle', message: 'Ready' });
+  const [uploadingSource, setUploadingSource] = useState<DataSourceKey | null>(null);
   const hasLoadedBackendDataSourcesRef = useRef(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const lastSourceModifiedAtRef = useRef('');
@@ -368,6 +388,7 @@ function App() {
       .finally(() => {
         hasLoadedBackendDataSourcesRef.current = true;
       });
+    loadUploadClients();
   }, []);
 
   useEffect(() => {
@@ -403,6 +424,75 @@ function App() {
     }
   };
 
+  const loadUploadClients = async () => {
+    try {
+      const response = await axios.get('/api/settings/upload-clients');
+      if (response.data?.status === 'success') {
+        setUploadClients(response.data.clients || []);
+        if (response.data.active_client) {
+          setUploadClientId(response.data.active_client);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading upload clients:', error);
+    }
+  };
+
+  const handleSelectUploadClient = async (clientId: string) => {
+    try {
+      setUploadStatus({ tone: 'syncing', message: 'Selecting client...' });
+      const response = await axios.post('/api/settings/upload-client', { client_id: clientId });
+      if (response.data?.status === 'success') {
+        setUploadClientId(response.data.client_id);
+        setDataSources({ ...DEFAULT_DATA_SOURCES, ...response.data.data_sources });
+        setUploadClients(response.data.clients || []);
+        setUploadStatus({ tone: 'ok', message: `Active: ${response.data.client_id}` });
+        await fetchData({ manual: true });
+      }
+    } catch (error) {
+      console.error('Error selecting upload client:', error);
+      setUploadStatus({ tone: 'error', message: 'Client select failed' });
+    }
+  };
+
+  const handleUploadFile = async (sourceKey: DataSourceKey, file: File | null) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setUploadStatus({ tone: 'error', message: 'Only .xlsx files' });
+      return;
+    }
+
+    const normalizedClientId = uploadClientId.trim();
+    if (!normalizedClientId) {
+      setUploadStatus({ tone: 'error', message: 'Client required' });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('client_id', normalizedClientId);
+    formData.append('file', file);
+
+    try {
+      setUploadingSource(sourceKey);
+      setUploadStatus({ tone: 'syncing', message: `Uploading ${sourceKey}...` });
+      const response = await axios.post(`/api/upload/${sourceKey}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (response.data?.status === 'success') {
+        setUploadClientId(response.data.client_id);
+        setDataSources({ ...DEFAULT_DATA_SOURCES, ...response.data.data_sources });
+        setUploadClients(response.data.clients || []);
+        setUploadStatus({ tone: 'ok', message: `${sourceKey} uploaded` });
+        await fetchData({ manual: true });
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setUploadStatus({ tone: 'error', message: `${sourceKey} upload failed` });
+    } finally {
+      setUploadingSource(null);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -415,6 +505,13 @@ function App() {
     warn: 'text-amber-600 dark:text-amber-300',
     error: 'text-rose-600 dark:text-rose-300',
   }[syncStatus.tone];
+  const uploadStatusClassName = {
+    idle: 'text-slate-400 dark:text-slate-500',
+    syncing: 'text-blue-500 dark:text-blue-300',
+    ok: 'text-emerald-600 dark:text-emerald-300',
+    warn: 'text-amber-600 dark:text-amber-300',
+    error: 'text-rose-600 dark:text-rose-300',
+  }[uploadStatus.tone];
 
   const hours = currentTime.getHours().toString().padStart(2, '0');
   const minutes = currentTime.getMinutes().toString().padStart(2, '0');
@@ -641,7 +738,7 @@ function App() {
                 </button>
 
                 {isSettingsOpen && (
-                  <div className="absolute right-0 mt-2 w-[420px] bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50">
+                  <div className="absolute right-0 mt-2 w-[520px] bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50">
                     <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50">Sync Interval</div>
                     {[
                       { label: '15 Minutes', value: 900 },
@@ -662,11 +759,7 @@ function App() {
                     <div className="border-t border-slate-100 dark:border-slate-700/50 mt-2"></div>
                     <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50 mt-2">Data Source Location</div>
                     <div className="px-4 py-3 space-y-3">
-                      {[
-                        { key: 'inbound' as const, label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link' },
-                        { key: 'pick' as const, label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link' },
-                        { key: 'outbound' as const, label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link' },
-                      ].map((source) => (
+                      {DATA_SOURCE_ITEMS.map((source) => (
                         <label key={source.key} className="block">
                           <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{source.label}</span>
                           <input
@@ -687,6 +780,86 @@ function App() {
                       >
                         {isSavingDataSources ? 'Saving...' : 'Confirm Data Sources'}
                       </button>
+                    </div>
+
+                    <div className="border-t border-slate-100 dark:border-slate-700/50 mt-2"></div>
+                    <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50 mt-2">Client Upload</div>
+                    <div className="px-4 py-3 space-y-3">
+                      <label className="block">
+                        <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Client / Location ID</span>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={uploadClientId}
+                            onChange={(event) => setUploadClientId(event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                            placeholder="hdc-main"
+                            className="min-w-0 flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-sidebar dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-colors focus:border-ci-blue focus:bg-white dark:focus:bg-slate-950"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSelectUploadClient(uploadClientId)}
+                            className="rounded-lg bg-slate-700 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-white transition-all hover:bg-slate-900 dark:bg-slate-600 dark:hover:bg-slate-500"
+                          >
+                            Use
+                          </button>
+                        </div>
+                      </label>
+
+                      {uploadClients.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {uploadClients.map((client) => (
+                            <button
+                              key={client.client_id}
+                              type="button"
+                              onClick={() => handleSelectUploadClient(client.client_id)}
+                              className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors ${
+                                uploadClientId === client.client_id
+                                  ? 'border-ci-blue bg-blue-50 text-ci-blue dark:bg-blue-500/10 dark:text-blue-300'
+                                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                              }`}
+                            >
+                              {client.client_id}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-2">
+                        {DATA_SOURCE_ITEMS.map((source) => {
+                          const currentClient = uploadClients.find((client) => client.client_id === uploadClientId);
+                          const fileInfo = currentClient?.files?.[source.key];
+                          return (
+                            <div key={`upload-${source.key}`} className="grid grid-cols-[1fr_auto] gap-2 rounded-md bg-white dark:bg-slate-800 px-2 py-2">
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-black uppercase tracking-wide text-sidebar dark:text-slate-100">{source.label}</div>
+                                <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                                  {fileInfo?.exists ? `${source.fileName} • ${fileInfo.modified_at}` : `Waiting for ${source.fileName}`}
+                                </div>
+                              </div>
+                              <label className={`cursor-pointer rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition-colors ${
+                                uploadingSource === source.key ? 'bg-slate-400' : 'bg-ci-blue hover:bg-ci-blue-dark'
+                              }`}>
+                                {uploadingSource === source.key ? 'Uploading' : 'Upload'}
+                                <input
+                                  type="file"
+                                  accept=".xlsx"
+                                  className="hidden"
+                                  disabled={uploadingSource !== null}
+                                  onChange={(event) => {
+                                    handleUploadFile(source.key, event.target.files?.[0] || null);
+                                    event.target.value = '';
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className={`text-[10px] font-black uppercase tracking-wide ${uploadStatusClassName}`}>
+                        {uploadStatus.message}
+                      </div>
                     </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-700/50 mt-2"></div>
