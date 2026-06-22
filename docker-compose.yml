@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    container_name: db-hdc-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - .:/workspace:ro
+      - "D:/OneDrive/OneDrive - CJWorld/HDC_IT/DashBoard:/onedrive-dashboard:ro"
+    environment:
+      - ENV=development
+      - PROJECT_ROOT=/workspace
+      - HOST_DASHBOARD_PATH=D:/OneDrive/OneDrive - CJWorld/HDC_IT/DashBoard
+      - CONTAINER_DASHBOARD_PATH=/onedrive-dashboard
+      - INBOUND_SOURCE=/onedrive-dashboard/Inbound.xlsx
+      - PICK_SOURCE=/onedrive-dashboard/Pick.xlsx
+      - OUTBOUND_SOURCE=/onedrive-dashboard/Outbound.xlsx
+      - USE_MOCK=true
+      - EXCEL_URLS= # ใส่หลายลิงก์แยกด้วยคอมมา เช่น url1,url2
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: db-hdc-frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # prevent overwriting local node_modules
+    restart: always

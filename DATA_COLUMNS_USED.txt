@@ -1,0 +1,219 @@
+DB-HDC Dashboard - Excel Columns Used
+Updated: 2026-06-16
+
+Data source folder:
+- Docker path: /onedrive-dashboard
+- Windows path: D:\OneDrive\OneDrive - CJWorld\HDC_IT\DashBoard
+- Example path: D:\Code\DB-HDC\example
+
+============================================================
+1. Inbound Overview
+============================================================
+
+File:
+- Inbound.xlsx
+
+Sheet: inbound
+Purpose:
+- Page 1: Receive
+- Main inbound summary table and pie chart.
+
+Rows:
+- Header row: 2
+- Data starts: row 3
+- Stops when WH is TOTAL.
+
+Columns used:
+- A / WH
+- B / BU
+- C / Total PO
+- D / GR Complete
+- E / GR In Progress
+- F / Not Started
+- G / Expected Qty
+- H / Received Qty
+- I / Pending Qty
+- J / Remark
+
+Other cells:
+- G1 is read as last_update if present.
+
+Dashboard usage:
+- Pie Chart: GR Complete, GR In Progress, Not Started
+- KPI: Total Pending Qty, Actual GR Complete %
+- Table: Inbound Detail
+
+------------------------------------------------------------
+
+Sheet: put 15
+Purpose:
+- Page 2: Putaway
+- Putaway table and Putaway pie chart.
+
+Rows:
+- Header row: 3
+- Data starts: row 4
+- Stops when WH is TOTAL.
+
+Columns used:
+- A / WH
+- B / BU
+- C / Backlog
+- D / New Receipt
+- E / Workload
+- F / Putaway
+- G / Balance
+- H / Progress %
+
+Other cells:
+- F1 is read as last_update if present.
+
+Dashboard usage:
+- Pie Chart:
+  - Completed = Putaway
+  - In Progress = max(Workload - Completed - Remain, 0)
+  - Remain = max(Balance - Completed, 0)
+- KPI: Total Balance, Putaway Progress %
+- Table: Putaway Detail
+
+============================================================
+2. Pick Progress
+============================================================
+
+File:
+- Pick.xlsx
+
+Sheet: Resuft
+Purpose:
+- Pick progress stack bar, main pick table, Product size HLE table.
+
+Main table:
+- Header row: 3
+- Data starts: row 4
+- Stops when Group is Grand Total.
+
+Columns used:
+- B / Group
+- C / Loading date2
+- D / Group HDC
+- E / Status
+- F / Sum of Total MU
+
+Parsing notes:
+- Group, Loading date2, and Group HDC are fill-down values when cells are blank.
+- Only Status values Completed and Pending are used.
+
+Dashboard usage:
+- Pick Progress bar:
+  - Completed = Sum of Total MU where Status is Completed
+  - Pending = Sum of Total MU where Status is Pending
+- Main Pick table:
+  - Group
+  - Loading date2
+  - Group HDC
+  - Status
+  - Sum of Total MU
+
+------------------------------------------------------------
+
+Product size HLE summary:
+- Data starts: row 14
+
+Columns used:
+- H / Size
+- I / Picked
+- J / Total MU
+- K / Percentage value
+
+Parsing notes:
+- Rows with Size containing "total" are skipped.
+- Only Picked values Completed and Pending are used.
+
+Dashboard usage:
+- Product size HLE table
+- Percentage mini bar
+
+============================================================
+3. Outbound
+============================================================
+
+File:
+- Outbound.xlsx
+
+Sheet: HLE
+Purpose:
+- Outbound page 1: HLE
+- Outbound chart, summary table, and Plan Load table.
+
+Rows:
+- Header row: 5
+- Subheader row: 6
+- Data starts: row 8
+- Stops when Plan Load contains outbound progress marker or blank section ends.
+
+Columns used:
+- M / Type or Site
+- N / Plan Load
+- O / Plan Load DO
+- P / Pending DO
+- Q / Pending Q'ty MU
+- R / Completed DO
+- S / Completed Q'ty MU
+
+Dashboard usage:
+- Basic Bar chart:
+  - Actual Order % = Completed DO / Plan Load DO
+  - Receive % = Completed Q'ty MU / (Pending Q'ty MU + Completed Q'ty MU)
+- Summary table:
+  - Actual Order total, pending, completed
+  - Receive total, pending, completed
+- Detail table:
+  - Site
+  - Plan Load
+  - Plan Load DO
+  - Pending DO
+  - Pending QTY MU
+  - Completed DO
+  - Completed QTY MU
+
+------------------------------------------------------------
+
+Sheet: 1 PX
+Purpose:
+- Outbound page 2: 1PX
+- Same Outbound UI layout as HLE, but parsed from 1PX sheet layout.
+
+Rows:
+- Header row is detected where column M equals "Plan Load".
+- Data starts 2 rows after that header.
+- Stops when Plan Load contains outbound progress marker or after blank section.
+
+Columns used:
+- M / Plan Load
+- N / Plan Load DO
+- O / Pending DO
+- P / Pending Q'ty MU
+- Q / Completed DO
+- R / Completed Q'ty MU
+
+Generated value:
+- Site is set to "1PX" by backend.
+
+Dashboard usage:
+- Same as HLE page:
+  - Basic Bar chart
+  - Summary table
+  - Plan Load detail table
+
+============================================================
+Important Notes
+============================================================
+
+- The dashboard reads files through backend parser code in backend/processor.py.
+- Frontend does not directly read Excel files.
+- If Docker is used, Windows paths under:
+  D:\OneDrive\OneDrive - CJWorld\HDC_IT\DashBoard
+  are mapped to:
+  /onedrive-dashboard
+- If a configured file or sheet cannot be read, mock numbers are disabled.
+  The dashboard should show empty/zero data instead of fake values.
