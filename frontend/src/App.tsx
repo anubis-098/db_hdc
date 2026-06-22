@@ -556,6 +556,54 @@ function App() {
     : [];
   const pickChartStackTotal = pickChartSegments.reduce((sum, segment) => sum + segment.value, 0);
   const getPickChartPercent = (value: number) => pickChartStackTotal > 0 ? (value / pickChartStackTotal) * 100 : 0;
+  const pickPieChartSeries = pickChartSegments.map((segment) => segment.value);
+  const pickPieChartOptions = {
+    chart: {
+      type: 'pie',
+      background: 'transparent',
+      toolbar: { show: false },
+      animations: CHART_ANIMATION,
+    },
+    labels: pickChartSegments.map((segment) => segment.name),
+    colors: pickChartSegments.map((segment) => segment.color),
+    stroke: {
+      width: 2,
+      colors: [isDarkMode ? '#1e293b' : '#ffffff'],
+    },
+    dataLabels: {
+      enabled: true,
+      formatter: (val) => `${Number(val).toFixed(0)}%`,
+      style: {
+        fontSize: '13px',
+        fontWeight: 900,
+        colors: ['#ffffff'],
+      },
+      dropShadow: {
+        enabled: true,
+        top: 1,
+        left: 1,
+        blur: 2,
+        color: '#000000',
+        opacity: 0.45,
+      },
+    },
+    plotOptions: {
+      pie: {
+        expandOnClick: false,
+      },
+    },
+    legend: { show: false },
+    tooltip: {
+      theme: isDarkMode ? 'dark' : 'light',
+      y: {
+        formatter: (val) => `${Number(val).toLocaleString()} MU`,
+      },
+    },
+    states: {
+      hover: { filter: { type: 'none' } },
+      active: { filter: { type: 'none' } },
+    },
+  };
   const pickSizes = ['L', 'M', 'S'] as const;
   const pickSecondTableRows = data?.pick.size_summary?.length
     ? data.pick.size_summary
@@ -895,37 +943,23 @@ function App() {
                   <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking</span>
                 </div>
                 
-                {/* 100% Stacked Bar Chart Area (Single Bar) */}
-                <div className="mx-3 mt-3 h-[112px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-3 py-1.5 flex flex-col justify-center">
+                {/* Pie Chart Area */}
+                <div className="mx-3 mt-3 h-[132px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 flex flex-col justify-center">
                   {data && (
-                    <div className="flex h-full flex-col justify-center gap-2">
-                      <div className="flex h-11 w-full overflow-hidden rounded-lg bg-slate-200 dark:bg-slate-700 ring-1 ring-slate-200 dark:ring-slate-600">
-                        {pickChartSegments.map((segment) => {
-                          const percent = getPickChartPercent(segment.value);
-                          return (
-                            <div
-                              key={`pick-chart-${segment.name}`}
-                              className={`flex h-full min-w-0 items-center justify-center overflow-hidden transition-[width] duration-[1500ms] ease-in-out ${segment.radius}`}
-                              style={{ width: `${percent}%`, backgroundColor: segment.color }}
-                              title={`${segment.name}: ${segment.value.toLocaleString()} MU (${percent.toFixed(1)}%)`}
-                            >
-                              {percent >= 9 && (
-                                <span
-                                  className="truncate px-1 text-[20px] font-black drop-shadow"
-                                  style={{ color: pickProgressTheme.dataLabel }}
-                                >
-                                  {percent.toFixed(0)}%
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                    <div className="grid h-full grid-cols-[112px_minmax(0,1fr)] items-center gap-3">
+                      <div className="h-[102px]">
+                        <Chart
+                          options={pickPieChartOptions}
+                          series={pickPieChartSeries}
+                          type="pie"
+                          height="102"
+                        />
                       </div>
-                      <div className="flex items-center justify-center gap-4 text-[12px] font-black text-slate-600 dark:text-slate-300">
+                      <div className="flex min-w-0 flex-col items-start justify-center gap-1.5 text-[12px] font-black text-slate-600 dark:text-slate-300">
                         {pickChartSegments.map((segment) => (
-                          <div key={`pick-legend-${segment.name}`} className="flex items-center gap-1.5">
+                          <div key={`pick-legend-${segment.name}`} className="flex max-w-full items-center gap-1.5">
                             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: segment.color }}></span>
-                            <span>{segment.name}: {segment.value.toLocaleString()} MU</span>
+                            <span className="truncate">{segment.name}: {segment.value.toLocaleString()} MU ({getPickChartPercent(segment.value).toFixed(0)}%)</span>
                           </div>
                         ))}
                       </div>
