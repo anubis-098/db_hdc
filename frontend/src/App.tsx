@@ -216,7 +216,6 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(getInitialDarkMode);
   const [dataSources, setDataSources] = useState<DataSourceSettings>(getInitialDataSources);
-  const [isSavingDataSources, setIsSavingDataSources] = useState(false);
   const [uploadClientId, setUploadClientId] = useState('hdc-main');
   const [uploadClients, setUploadClients] = useState<UploadClient[]>([]);
   const [uploadStatus, setUploadStatus] = useState<SyncStatus>({ tone: 'idle', message: 'Ready' });
@@ -405,23 +404,6 @@ function App() {
     setSyncInterval(seconds);
     setCountdown(seconds);
     setIsSettingsOpen(false);
-  };
-
-  const handleDataSourceChange = (key: DataSourceKey, value: string) => {
-    setDataSources((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleConfirmDataSources = async () => {
-    try {
-      setIsSavingDataSources(true);
-      await axios.post('/api/settings/data-sources', dataSources);
-      await fetchData();
-      setIsSettingsOpen(false);
-    } catch (error) {
-      console.error('Error saving data sources:', error);
-    } finally {
-      setIsSavingDataSources(false);
-    }
   };
 
   const loadUploadClients = async () => {
@@ -755,32 +737,6 @@ function App() {
                         {opt.label}
                       </button>
                     ))}
-
-                    <div className="border-t border-slate-100 dark:border-slate-700/50 mt-2"></div>
-                    <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50 mt-2">Data Source Location</div>
-                    <div className="px-4 py-3 space-y-3">
-                      {DATA_SOURCE_ITEMS.map((source) => (
-                        <label key={source.key} className="block">
-                          <span className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{source.label}</span>
-                          <input
-                            type="text"
-                            value={dataSources[source.key]}
-                            onChange={(event) => handleDataSourceChange(source.key, event.target.value)}
-                            onClick={(event) => event.stopPropagation()}
-                            placeholder={source.placeholder}
-                            className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-sidebar dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-colors focus:border-ci-blue focus:bg-white dark:focus:bg-slate-950"
-                          />
-                        </label>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={handleConfirmDataSources}
-                        disabled={isSavingDataSources}
-                        className="mt-1 w-full rounded-lg bg-ci-blue px-3 py-2 text-xs font-black uppercase tracking-wide text-white shadow-sm transition-all hover:bg-ci-blue-dark active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {isSavingDataSources ? 'Saving...' : 'Confirm Data Sources'}
-                      </button>
-                    </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-700/50 mt-2"></div>
                     <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50 mt-2">Client Upload</div>
