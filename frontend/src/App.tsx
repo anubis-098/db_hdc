@@ -659,6 +659,33 @@ function App() {
     pickSecondTableTotal > 0 ? (value / pickSecondTableTotal) * 100 : 0;
   const formatPickSecondPercent = (value: number) =>
     `${getPickSecondPercentValue(value).toFixed(2)}%`;
+  const pickGroupOrder = ['HLE', '1PX', 'Donation', 'Export'] as const;
+  const pickGroupSummaryRows = pickGroupOrder.map((label) => {
+    const rows = data?.pick.table.filter((row) => {
+      const groupHdc = row.group_hdc.toLowerCase().replace(/\s+/g, '');
+      const target = label.toLowerCase().replace(/\s+/g, '');
+
+      if (target === 'export') return groupHdc.includes('export');
+      if (target === 'donation') return groupHdc.includes('donation');
+      return groupHdc.includes(target);
+    }) ?? [];
+    const completed = rows
+      .filter((row) => row.status.toLowerCase() === 'completed')
+      .reduce((sum, row) => sum + row.sum_total_mu, 0);
+    const pending = rows
+      .filter((row) => row.status.toLowerCase() !== 'completed')
+      .reduce((sum, row) => sum + row.sum_total_mu, 0);
+    const plan = completed + pending;
+
+    return {
+      label,
+      plan,
+      completed,
+      pending,
+      completedPercent: plan > 0 ? (completed / plan) * 100 : 0,
+      pendingPercent: plan > 0 ? (pending / plan) * 100 : 0,
+    };
+  });
   const buildOutboundSummary = (rows: {
     planLoadDo: number;
     pendingDo: number;
@@ -1000,43 +1027,39 @@ function App() {
 
                 {/* Table Area - Updated Headers */}
                 <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2">
-                  <div className="shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                    <table className="w-full text-left border-collapse table-fixed">
-                      <thead className="bg-[#1F4E79] text-white sticky top-0">
-                        <tr className="text-[10px] uppercase font-extrabold tracking-wider border-b border-blue-200/30">
-                          <th className="py-3 px-3 w-[15%] border-r border-blue-200/30">Group</th>
-                          <th className="py-3 px-3 w-[25%] border-r border-blue-200/30">Loading Date</th>
-                          <th className="py-3 px-3 w-[25%] border-r border-blue-200/30">Group HDC</th>
-                          <th className="py-3 px-3 w-[15%] text-center border-r border-blue-200/30">Status</th>
-                          <th className="py-3 px-3 w-[20%] text-right leading-tight">Sum of<br/>Total MU</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data?.pick.table.slice(0, 5).map((row, idx, rows) => {
-                          const previousRow = rows[idx - 1];
-                          const isFirstGroupRow = !previousRow || previousRow.group !== row.group;
-                          const isFirstLoadingDateRow = isFirstGroupRow || previousRow.loading_date !== row.loading_date;
-
-                          return (
-                            <tr key={idx} className={`border-b border-slate-200 dark:border-slate-700/50 last:border-0 text-[12px] font-bold text-sidebar dark:text-slate-200 hover:brightness-95 transition-colors ${row.status === 'Completed' ? 'bg-[#E6F2FF] dark:bg-blue-900/20' : 'bg-[#FCE4D6] dark:bg-orange-900/20'}`}>
-                              <td className="py-3 px-3 font-mono text-ci-blue dark:text-blue-300 border-r border-slate-200/60 dark:border-slate-700/50">{isFirstGroupRow ? row.group : ''}</td>
-                              <td className="py-3 px-3 border-r border-slate-200/60 dark:border-slate-700/50">{isFirstLoadingDateRow ? row.loading_date : ''}</td>
-                              <td className="py-3 px-3 truncate border-r border-slate-200/60 dark:border-slate-700/50">{row.group_hdc}</td>
-                              <td className="py-3 px-3 text-center border-r border-slate-200/60 dark:border-slate-700/50">
-                                <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${
-                                  row.status === 'Completed' 
-                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' 
-                                    : 'bg-yellow-100 dark:bg-yellow-900/30 text-amber-700 dark:text-amber-400'
-                                }`}>
-                                  {row.status}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 text-right font-mono text-blue-700 dark:text-blue-300">{row.sum_total_mu.toLocaleString()}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                    <div className="grid grid-cols-[18%_22%_22%_38%] bg-[#1F4E79] text-[10px] font-extrabold uppercase tracking-wider text-white">
+                      <div className="border-r border-blue-200/30 px-2 py-2">Group HDC</div>
+                      <div className="border-r border-blue-200/30 px-2 py-2 text-right">Plan MU</div>
+                      <div className="border-r border-blue-200/30 px-2 py-2 text-right">Completed</div>
+                      <div className="px-2 py-2 text-right">Progress 100%</div>
+                    </div>
+                    <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {pickGroupSummaryRows.map((row) => (
+                        <div key={`pick-group-${row.label}`} className="grid grid-cols-[18%_22%_22%_38%] items-center bg-white text-[12px] font-black text-sidebar dark:bg-slate-800 dark:text-slate-100">
+                          <div className="border-r border-slate-200/70 px-2 py-2 text-left dark:border-slate-700/70">{row.label}</div>
+                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-sky-700 dark:border-slate-700/70 dark:text-sky-300">{row.plan.toLocaleString()}</div>
+                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-emerald-700 dark:border-slate-700/70 dark:text-emerald-300">{row.completed.toLocaleString()}</div>
+                          <div className="px-2 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-4 flex-1 overflow-hidden rounded bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-700 dark:ring-slate-600">
+                                <div
+                                  className="h-full bg-emerald-500 transition-[width] duration-[1300ms] ease-in-out"
+                                  style={{ width: `${row.completedPercent}%` }}
+                                  title={`Completed: ${row.completed.toLocaleString()} MU (${row.completedPercent.toFixed(1)}%)`}
+                                ></div>
+                                <div
+                                  className="h-full bg-amber-500 transition-[width] duration-[1300ms] ease-in-out"
+                                  style={{ width: `${row.pendingPercent}%` }}
+                                  title={`Pending: ${row.pending.toLocaleString()} MU (${row.pendingPercent.toFixed(1)}%)`}
+                                ></div>
+                              </div>
+                              <span className="w-12 text-right font-mono text-[11px] text-slate-600 dark:text-slate-300">{row.completedPercent.toFixed(0)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="mt-auto shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
