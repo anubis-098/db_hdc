@@ -556,7 +556,7 @@ function App() {
     : [];
   const pickChartStackTotal = pickChartSegments.reduce((sum, segment) => sum + segment.value, 0);
   const getPickChartPercent = (value: number) => pickChartStackTotal > 0 ? (value / pickChartStackTotal) * 100 : 0;
-  const pickSizes = ['S', 'M', 'L'] as const;
+  const pickSizes = ['L', 'M', 'S'] as const;
   const pickSecondTableRows = data?.pick.size_summary?.length
     ? data.pick.size_summary
     : data
