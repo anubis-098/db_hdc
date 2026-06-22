@@ -559,7 +559,7 @@ function App() {
   const pickPieChartSeries = pickChartSegments.map((segment) => segment.value);
   const pickPieChartOptions = {
     chart: {
-      type: 'pie',
+      type: 'donut',
       background: 'transparent',
       toolbar: { show: false },
       animations: CHART_ANIMATION,
@@ -590,6 +590,36 @@ function App() {
     plotOptions: {
       pie: {
         expandOnClick: false,
+        donut: {
+          size: '58%',
+          labels: {
+            show: true,
+            name: {
+              show: true,
+              color: isDarkMode ? '#cbd5e1' : '#475569',
+              fontSize: '11px',
+              fontWeight: 900,
+              offsetY: 16,
+            },
+            value: {
+              show: true,
+              color: isDarkMode ? '#f8fafc' : '#0f172a',
+              fontSize: '20px',
+              fontWeight: 900,
+              offsetY: -14,
+              formatter: (val) => Number(val).toLocaleString(),
+            },
+            total: {
+              show: true,
+              showAlways: true,
+              label: 'Total MU',
+              color: isDarkMode ? '#cbd5e1' : '#475569',
+              fontSize: '11px',
+              fontWeight: 900,
+              formatter: () => pickChartStackTotal.toLocaleString(),
+            },
+          },
+        },
       },
     },
     legend: { show: false },
@@ -943,19 +973,20 @@ function App() {
                   <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking</span>
                 </div>
                 
-                {/* Pie Chart Area */}
+                {/* Donut Chart Area */}
                 <div className="mx-3 mt-3 h-[228px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 flex flex-col justify-center">
                   {data && (
-                    <div className="grid h-full grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
-                      <div className="h-[202px]">
+                    <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1">
+                      <div className="flex h-[166px] w-full items-center justify-center">
                         <Chart
                           options={pickPieChartOptions}
                           series={pickPieChartSeries}
-                          type="pie"
-                          height="202"
+                          type="donut"
+                          height="166"
+                          width="260"
                         />
                       </div>
-                      <div className="flex min-w-0 flex-col items-start justify-center gap-2 text-[13px] font-black text-slate-600 dark:text-slate-300">
+                      <div className="flex w-full min-w-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] font-black text-slate-600 dark:text-slate-300">
                         {pickChartSegments.map((segment) => (
                           <div key={`pick-legend-${segment.name}`} className="flex max-w-full items-center gap-1.5">
                             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: segment.color }}></span>
