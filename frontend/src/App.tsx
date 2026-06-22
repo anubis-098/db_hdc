@@ -1028,35 +1028,36 @@ function App() {
                 {/* Table Area - Updated Headers */}
                 <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2">
                   <div className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                    <div className="grid grid-cols-[18%_22%_22%_38%] bg-[#1F4E79] text-[10px] font-extrabold uppercase tracking-wider text-white">
-                      <div className="border-r border-blue-200/30 px-2 py-2">Group HDC</div>
+                    <div className="grid grid-cols-[46%_18%_18%_18%] bg-[#1F4E79] text-[10px] font-extrabold uppercase tracking-wider text-white">
+                      <div className="border-r border-blue-200/30 px-2 py-2">Progress 100%</div>
                       <div className="border-r border-blue-200/30 px-2 py-2 text-right">Plan MU</div>
                       <div className="border-r border-blue-200/30 px-2 py-2 text-right">Completed</div>
-                      <div className="px-2 py-2 text-right">Progress 100%</div>
+                      <div className="px-2 py-2 text-right">Pending</div>
                     </div>
                     <div className="divide-y divide-slate-200 dark:divide-slate-700">
                       {pickGroupSummaryRows.map((row) => (
-                        <div key={`pick-group-${row.label}`} className="grid grid-cols-[18%_22%_22%_38%] items-center bg-white text-[12px] font-black text-sidebar dark:bg-slate-800 dark:text-slate-100">
-                          <div className="border-r border-slate-200/70 px-2 py-2 text-left dark:border-slate-700/70">{row.label}</div>
-                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-sky-700 dark:border-slate-700/70 dark:text-sky-300">{row.plan.toLocaleString()}</div>
-                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-emerald-700 dark:border-slate-700/70 dark:text-emerald-300">{row.completed.toLocaleString()}</div>
-                          <div className="px-2 py-2">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-4 flex-1 overflow-hidden rounded bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-700 dark:ring-slate-600">
-                                <div
-                                  className="h-full bg-emerald-500 transition-[width] duration-[1300ms] ease-in-out"
-                                  style={{ width: `${row.completedPercent}%` }}
-                                  title={`Completed: ${row.completed.toLocaleString()} MU (${row.completedPercent.toFixed(1)}%)`}
-                                ></div>
-                                <div
-                                  className="h-full bg-amber-500 transition-[width] duration-[1300ms] ease-in-out"
-                                  style={{ width: `${row.pendingPercent}%` }}
-                                  title={`Pending: ${row.pending.toLocaleString()} MU (${row.pendingPercent.toFixed(1)}%)`}
-                                ></div>
+                        <div key={`pick-group-${row.label}`} className="grid grid-cols-[46%_18%_18%_18%] items-center bg-white text-[12px] font-black text-sidebar dark:bg-slate-800 dark:text-slate-100">
+                          <div className="border-r border-slate-200/70 px-2 py-2 dark:border-slate-700/70">
+                            <div className="relative flex h-6 overflow-hidden rounded bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-700 dark:ring-slate-600">
+                              <div
+                                className="h-full bg-emerald-500 transition-[width] duration-[1300ms] ease-in-out"
+                                style={{ width: `${row.completedPercent}%` }}
+                                title={`Completed: ${row.completed.toLocaleString()} MU (${row.completedPercent.toFixed(1)}%)`}
+                              ></div>
+                              <div
+                                className="h-full bg-amber-500 transition-[width] duration-[1300ms] ease-in-out"
+                                style={{ width: `${row.pendingPercent}%` }}
+                                title={`Pending: ${row.pending.toLocaleString()} MU (${row.pendingPercent.toFixed(1)}%)`}
+                              ></div>
+                              <div className="absolute inset-0 flex items-center justify-between px-2 text-[11px] font-black text-white drop-shadow">
+                                <span>{row.label}</span>
+                                <span>{row.completedPercent.toFixed(0)}%</span>
                               </div>
-                              <span className="w-12 text-right font-mono text-[11px] text-slate-600 dark:text-slate-300">{row.completedPercent.toFixed(0)}%</span>
                             </div>
                           </div>
+                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-sky-700 dark:border-slate-700/70 dark:text-sky-300">{row.plan.toLocaleString()}</div>
+                          <div className="border-r border-slate-200/70 px-2 py-2 text-right font-mono text-emerald-700 dark:border-slate-700/70 dark:text-emerald-300">{row.completed.toLocaleString()}</div>
+                          <div className="px-2 py-2 text-right font-mono text-amber-700 dark:text-amber-300">{row.pending.toLocaleString()}</div>
                         </div>
                       ))}
                     </div>
