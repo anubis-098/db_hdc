@@ -944,18 +944,18 @@ function App() {
                 </div>
                 
                 {/* Pie Chart Area */}
-                <div className="mx-3 mt-3 h-[132px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-3 py-2 flex flex-col justify-center">
+                <div className="mx-3 mt-3 h-[228px] shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 px-4 py-3 flex flex-col justify-center">
                   {data && (
-                    <div className="grid h-full grid-cols-[112px_minmax(0,1fr)] items-center gap-3">
-                      <div className="h-[102px]">
+                    <div className="grid h-full grid-cols-[210px_minmax(0,1fr)] items-center gap-4">
+                      <div className="h-[202px]">
                         <Chart
                           options={pickPieChartOptions}
                           series={pickPieChartSeries}
                           type="pie"
-                          height="102"
+                          height="202"
                         />
                       </div>
-                      <div className="flex min-w-0 flex-col items-start justify-center gap-1.5 text-[12px] font-black text-slate-600 dark:text-slate-300">
+                      <div className="flex min-w-0 flex-col items-start justify-center gap-2 text-[13px] font-black text-slate-600 dark:text-slate-300">
                         {pickChartSegments.map((segment) => (
                           <div key={`pick-legend-${segment.name}`} className="flex max-w-full items-center gap-1.5">
                             <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: segment.color }}></span>
@@ -968,7 +968,7 @@ function App() {
                 </div>
 
                 {/* Table Area - Updated Headers */}
-                <div className="mx-3 mt-3 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2">
+                <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2">
                   <div className="shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                     <table className="w-full text-left border-collapse table-fixed">
                       <thead className="bg-[#1F4E79] text-white sticky top-0">
@@ -1008,7 +1008,7 @@ function App() {
                     </table>
                   </div>
 
-                  <div className="mt-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+                  <div className="mt-auto shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                     <table className="w-full border-collapse table-fixed text-[12px] font-bold text-sidebar dark:text-slate-100">
                       <thead>
                         <tr className="bg-blue-50 dark:bg-slate-700 text-sidebar dark:text-white">
