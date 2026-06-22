@@ -220,6 +220,7 @@ function App() {
   const [uploadClients, setUploadClients] = useState<UploadClient[]>([]);
   const [uploadStatus, setUploadStatus] = useState<SyncStatus>({ tone: 'idle', message: 'Ready' });
   const [uploadingSource, setUploadingSource] = useState<DataSourceKey | null>(null);
+  const [isResettingUploadClient, setIsResettingUploadClient] = useState(false);
   const hasLoadedBackendDataSourcesRef = useRef(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const lastSourceModifiedAtRef = useRef('');
@@ -475,6 +476,35 @@ function App() {
     }
   };
 
+  const handleResetUploadClient = async () => {
+    const normalizedClientId = uploadClientId.trim();
+    if (!normalizedClientId) {
+      setUploadStatus({ tone: 'error', message: 'Client required' });
+      return;
+    }
+
+    const confirmed = window.confirm(`Reset uploaded files for "${normalizedClientId}"?`);
+    if (!confirmed) return;
+
+    try {
+      setIsResettingUploadClient(true);
+      setUploadStatus({ tone: 'syncing', message: 'Resetting files...' });
+      const response = await axios.delete(`/api/upload-client/${encodeURIComponent(normalizedClientId)}`);
+      if (response.data?.status === 'success') {
+        setUploadClientId(response.data.client_id);
+        setDataSources({ ...DEFAULT_DATA_SOURCES, ...response.data.data_sources });
+        setUploadClients(response.data.clients || []);
+        setUploadStatus({ tone: 'ok', message: `${response.data.client_id} reset` });
+        await fetchData({ manual: true });
+      }
+    } catch (error) {
+      console.error('Error resetting upload client:', error);
+      setUploadStatus({ tone: 'error', message: 'Reset failed' });
+    } finally {
+      setIsResettingUploadClient(false);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -519,9 +549,9 @@ function App() {
   const pickChartPlan = data?.pick.chart.plan ?? ((data?.pick.chart.completed || 0) + (data?.pick.chart.pending || 0));
   const pickChartSegments = data
     ? [
-        { name: 'Completed', value: data.pick.chart.completed, color: pickProgressTheme.completed, radius: 'rounded-l-lg' },
-        { name: 'Pending', value: data.pick.chart.pending, color: pickProgressTheme.pending, radius: '' },
-        { name: 'Plan', value: pickChartPlan, color: pickProgressTheme.plan, radius: 'rounded-r-lg' },
+        { name: 'Plan', value: pickChartPlan, color: pickProgressTheme.plan, radius: 'rounded-l-lg' },
+        { name: 'Completed', value: data.pick.chart.completed, color: pickProgressTheme.completed, radius: '' },
+        { name: 'Pending', value: data.pick.chart.pending, color: pickProgressTheme.pending, radius: 'rounded-r-lg' },
       ]
     : [];
   const pickChartStackTotal = pickChartSegments.reduce((sum, segment) => sum + segment.value, 0);
@@ -629,7 +659,7 @@ function App() {
         opacity: 0.35,
       },
     },
-    colors: ['#10b981', '#f59e0b', '#0ea5e9'],
+    colors: ['#0ea5e9', '#10b981', '#f59e0b'],
     stroke: {
       width: 0,
       colors: [isDarkMode ? '#1e293b' : '#ffffff'],
@@ -655,9 +685,9 @@ function App() {
   };
   const getOutboundPercent = (value: number, total: number) => total > 0 ? (value / total) * 100 : 0;
   const outboundSummaryChartSeries = [
+    { name: 'Plan', data: outboundPlanSummary.map((item) => getOutboundPercent(item.total, item.total)) },
     { name: 'Completed', data: outboundPlanSummary.map((item) => getOutboundPercent(item.completed, item.total)) },
     { name: 'Pending', data: outboundPlanSummary.map((item) => getOutboundPercent(item.pending, item.total)) },
-    { name: 'Plan', data: outboundPlanSummary.map((item) => getOutboundPercent(item.total, item.total)) },
   ];
   return (
     <div className={isDarkMode ? 'dark' : ''}>
@@ -801,7 +831,7 @@ function App() {
                                   type="file"
                                   accept=".xlsx"
                                   className="hidden"
-                                  disabled={uploadingSource !== null}
+                                  disabled={uploadingSource !== null || isResettingUploadClient}
                                   onChange={(event) => {
                                     handleUploadFile(source.key, event.target.files?.[0] || null);
                                     event.target.value = '';
@@ -812,6 +842,15 @@ function App() {
                           );
                         })}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={handleResetUploadClient}
+                        disabled={isResettingUploadClient || uploadingSource !== null}
+                        className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black uppercase tracking-wide text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/50 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20"
+                      >
+                        {isResettingUploadClient ? 'Resetting...' : 'Reset Uploaded Files'}
+                      </button>
 
                       <div className={`text-[10px] font-black uppercase tracking-wide ${uploadStatusClassName}`}>
                         {uploadStatus.message}
@@ -1057,16 +1096,16 @@ function App() {
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-5 text-[10px] font-black text-slate-600 dark:text-slate-300">
                       <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-sky-500"></span>
+                        <span>Plan</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500"></span>
                         <span>Completed</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-sm bg-amber-500"></span>
                         <span>Pending</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-sky-500"></span>
-                        <span>Plan</span>
                       </div>
                     </div>
                   </div>

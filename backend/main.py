@@ -19,6 +19,7 @@ from processor import (
 import os
 import json
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
 import uuid
@@ -63,9 +64,9 @@ def load_data_sources() -> dict:
         with SETTINGS_PATH.open("r", encoding="utf-8") as file:
             data = json.load(file)
         return {
-            "inbound": str(data.get("inbound") or DEFAULT_DATA_SOURCES["inbound"]).strip(),
-            "pick": str(data.get("pick") or DEFAULT_DATA_SOURCES["pick"]).strip(),
-            "outbound": str(data.get("outbound") or DEFAULT_DATA_SOURCES["outbound"]).strip(),
+            "inbound": str(data.get("inbound", DEFAULT_DATA_SOURCES["inbound"])).strip(),
+            "pick": str(data.get("pick", DEFAULT_DATA_SOURCES["pick"])).strip(),
+            "outbound": str(data.get("outbound", DEFAULT_DATA_SOURCES["outbound"])).strip(),
         }
     except (OSError, json.JSONDecodeError):
         return DEFAULT_DATA_SOURCES.copy()
@@ -101,6 +102,9 @@ def set_active_upload_client(client_id: str) -> dict:
     save_data_sources(DataSourceSettings(**sources))
     return sources
 
+def clear_data_sources() -> dict:
+    return save_data_sources(DataSourceSettings(inbound="", pick="", outbound=""))
+
 def get_file_info(path: Path) -> dict:
     if not path.exists() or not path.is_file():
         return {"exists": False}
@@ -125,6 +129,17 @@ def list_upload_clients() -> list[dict]:
             },
         })
     return clients
+
+def get_active_upload_client(data_sources: dict | None = None) -> str:
+    active_sources = data_sources or load_data_sources()
+    for source in active_sources.values():
+        try:
+            source_path = Path(source)
+            if UPLOAD_ROOT in source_path.parents:
+                return source_path.relative_to(UPLOAD_ROOT).parts[0]
+        except (ValueError, IndexError):
+            continue
+    return ""
 
 def empty_dashboard_data() -> dict:
     return {
@@ -261,7 +276,16 @@ def update_cache():
         return
 
     if not EXCEL_URLS:
-        cached_data = {"status": "error", "message": "No EXCEL_URLS provided and USE_MOCK is false", "system_id": SYSTEM_ID}
+        cached_data = {
+            "status": "success",
+            "mode": "no_sources",
+            "data": empty_dashboard_data(),
+            "data_sources": data_sources,
+            "source_status": {},
+            "source_errors": {},
+            "system_id": SYSTEM_ID,
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
         return
 
     urls = [url.strip() for url in EXCEL_URLS.split(",") if url.strip()]
@@ -317,22 +341,11 @@ def set_data_sources(settings: DataSourceSettings):
 @app.get("/settings/upload-clients")
 def get_upload_clients():
     active_sources = load_data_sources()
-    active_client = ""
-    upload_root_text = str(UPLOAD_ROOT)
-
-    for source in active_sources.values():
-        try:
-            source_path = Path(source)
-            if UPLOAD_ROOT in source_path.parents:
-                active_client = source_path.relative_to(UPLOAD_ROOT).parts[0]
-                break
-        except (ValueError, IndexError):
-            continue
 
     return {
         "status": "success",
-        "upload_root": upload_root_text,
-        "active_client": active_client,
+        "upload_root": str(UPLOAD_ROOT),
+        "active_client": get_active_upload_client(active_sources),
         "clients": list_upload_clients(),
     }
 
@@ -390,6 +403,28 @@ async def upload_excel_source(source_key: str, client_id: str = Form(...), file:
         "filename": target_path.name,
         "file_info": get_file_info(target_path),
         "data_sources": sources,
+        "clients": list_upload_clients(),
+    }
+
+@app.delete("/upload-client/{client_id}")
+def reset_upload_client(client_id: str):
+    safe_client_id = normalize_client_id(client_id)
+    client_dir = get_upload_client_dir(safe_client_id)
+    active_client = get_active_upload_client()
+
+    if client_dir.exists():
+        shutil.rmtree(client_dir)
+
+    data_sources = load_data_sources()
+    if active_client == safe_client_id:
+        data_sources = clear_data_sources()
+
+    update_cache()
+    return {
+        "status": "success",
+        "client_id": safe_client_id,
+        "data_sources": data_sources,
+        "active_client": get_active_upload_client(data_sources),
         "clients": list_upload_clients(),
     }
 

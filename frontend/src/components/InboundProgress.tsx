@@ -128,20 +128,20 @@ const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; in
   const putawayRemainValue = Math.max(totalBalance - totalPutaway, 0);
   const putawayInProgressValue = Math.max(totalWorkload - putawayCompletedValue - putawayRemainValue, 0);
   const inboundLegendItems = [
+    { name: 'Plan', color: '#f59e0b' },
     { name: 'Completed', color: '#10b981' },
     { name: 'Pending', color: '#0ea5e9' },
-    { name: 'Plan', color: '#f59e0b' },
   ];
 
   const receiveStackSegments = [
+    { name: 'Plan', value: totalNotStarted, color: '#f59e0b' },
     { name: 'Completed', value: totalGRComplete, color: '#10b981' },
     { name: 'Pending', value: totalGRInProgress, color: '#0ea5e9' },
-    { name: 'Plan', value: totalNotStarted, color: '#f59e0b' },
   ];
   const putawayStackSegments = [
+    { name: 'Plan', value: putawayRemainValue, color: '#f59e0b' },
     { name: 'Completed', value: putawayCompletedValue, color: '#10b981' },
     { name: 'Pending', value: putawayInProgressValue, color: '#0ea5e9' },
-    { name: 'Plan', value: putawayRemainValue, color: '#f59e0b' },
   ];
   const getStackPercent = (value: number, total: number) => total > 0 ? (value / total) * 100 : 0;
 
