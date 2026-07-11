@@ -15,6 +15,9 @@
 
 body {
   @apply bg-background-light text-sidebar antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 @keyframes blink {
@@ -56,6 +59,14 @@ body {
   animation: outbound-page-slide 700ms ease-in-out both;
 }
 
+.slide-progress-mask {
+  overflow: hidden;
+  border-top-left-radius: 0.75rem;
+  border-top-right-radius: 0.75rem;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+
 /* Hide scrollbar for Kiosk Mode */
 ::-webkit-scrollbar {
   display: none;
@@ -63,4 +74,26 @@ body {
 * {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@media (min-width: 1024px) {
+  ::-webkit-scrollbar {
+    display: initial;
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.55);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.75);
+  }
+
+  * {
+    -ms-overflow-style: auto;
+    scrollbar-width: thin;
+  }
 }

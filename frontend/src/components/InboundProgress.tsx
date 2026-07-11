@@ -46,7 +46,15 @@ interface InboundPage {
 
 const SLIDE_INTERVAL_SECONDS = 30;
 
-const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; inboundData?: InboundProgressData }) => {
+const InboundProgress = ({
+  isDarkMode,
+  inboundData,
+  slideDelaySeconds = 0,
+}: {
+  isDarkMode?: boolean;
+  inboundData?: InboundProgressData;
+  slideDelaySeconds?: number;
+}) => {
   const [detailPageIndex, setDetailPageIndex] = useState(0);
   const [detailSlideCountdown, setDetailSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
   const fallbackReceivePage: InboundPage = {
@@ -76,18 +84,24 @@ const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; in
     }
 
     setDetailSlideCountdown(SLIDE_INTERVAL_SECONDS);
-    const timer = window.setInterval(() => {
-      setDetailSlideCountdown((prev) => {
-        if (prev <= 1) {
-          setDetailPageIndex((current) => (current + 1) % pageCount);
-          return SLIDE_INTERVAL_SECONDS;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    let timer: number | undefined;
+    const delayTimer = window.setTimeout(() => {
+      timer = window.setInterval(() => {
+        setDetailSlideCountdown((prev) => {
+          if (prev <= 1) {
+            setDetailPageIndex((current) => (current + 1) % pageCount);
+            return SLIDE_INTERVAL_SECONDS;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }, slideDelaySeconds * 1000);
 
-    return () => window.clearInterval(timer);
-  }, [detailPages.length]);
+    return () => {
+      window.clearTimeout(delayTimer);
+      if (timer) window.clearInterval(timer);
+    };
+  }, [detailPages.length, slideDelaySeconds]);
 
   const fallbackSummaryList: SummaryData[] = [];
   const summaryList = receivePage.summary_list?.length ? receivePage.summary_list : fallbackSummaryList;
@@ -202,18 +216,16 @@ const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; in
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden h-full transition-colors duration-300">
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden h-full transition-colors duration-300 lg:overflow-visible">
       
       {/* 1. SECTION HEADER */}
       <div className="relative p-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
-        {detailPages.length > 1 && (
-          <div className="absolute left-0 right-0 top-0 h-1 bg-slate-200/70 dark:bg-slate-700/70">
-            <div
-              className="h-full bg-blue-500 transition-[width] duration-1000 ease-linear"
-              style={{ width: `${detailSlideProgress}%` }}
-            ></div>
-          </div>
-        )}
+        <div className="slide-progress-mask absolute left-0 right-0 top-0 h-1 bg-slate-200/70 dark:bg-slate-700/70">
+          <div
+            className="h-full bg-blue-500 transition-[width] duration-1000 ease-linear"
+            style={{ width: `${detailSlideProgress}%` }}
+          ></div>
+        </div>
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-md">
             <span role="img" aria-label="box" className="text-sm leading-none">📦</span>
@@ -235,7 +247,7 @@ const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; in
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col p-3 gap-3 overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col p-3 gap-3 overflow-hidden min-h-0 lg:overflow-visible">
         
         {/* 2. MINI KPI SUMMARY CARDS */}
         <div className="grid grid-cols-2 gap-2 shrink-0">
@@ -273,14 +285,14 @@ const InboundProgress = ({ isDarkMode, inboundData }: { isDarkMode?: boolean; in
         </div>
 
         {/* 4. INBOUND DETAIL (MINI TABLE) */}
-        <div key={currentPage.key} className="flex-1 min-h-0 flex flex-col border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-slate-50 dark:bg-slate-800 mt-2 mb-1 animate-outbound-page">
+        <div key={currentPage.key} className="flex-1 min-h-0 flex flex-col border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden relative bg-slate-50 dark:bg-slate-800 mt-2 mb-1 animate-outbound-page lg:overflow-visible">
           <div className="bg-red-50 dark:bg-red-900/20 px-3 py-1.5 border-b border-red-100 dark:border-red-900/30 z-20 sticky left-0 shadow-sm shrink-0">
             <h4 className="text-[13px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest">{isPutawayPage ? 'Putaway Detail' : 'Inbound Detail'}</h4>
           </div>
           
-          <div className="overflow-hidden w-full flex-1 min-h-0">
-            <div className="h-full w-full">
-              <table className="h-full w-full table-fixed text-left border-collapse">
+          <div className="overflow-hidden w-full flex-1 min-h-0 lg:overflow-x-auto lg:overflow-y-visible">
+            <div className="h-full w-full lg:h-auto">
+              <table className="h-full w-full table-fixed text-left border-collapse lg:h-auto">
                 <thead className="bg-[#1F4E79] text-white">
                   <tr className="text-[10px] uppercase font-extrabold tracking-wide border-b border-slate-100 dark:border-slate-700/50 text-center leading-tight">
                     <th className="py-1.5 px-1.5 border-r border-blue-200/30">BU</th>

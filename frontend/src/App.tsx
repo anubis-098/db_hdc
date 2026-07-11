@@ -126,6 +126,10 @@ const DATA_SOURCES_STORAGE_KEY = 'db-hdc-data-sources';
 const DEFAULT_SYNC_INTERVAL = 1800;
 const VALID_SYNC_INTERVALS = [900, 1800, 3600, 7200, 10800];
 const SLIDE_INTERVAL_SECONDS = 30;
+const INBOUND_SLIDE_DELAY_SECONDS = 0;
+const PICK_SLIDE_DELAY_SECONDS = 1;
+const OUTBOUND_SLIDE_DELAY_SECONDS = 2;
+const PICK_PAGE_COUNT = 2;
 
 type DataSourceKey = 'inbound' | 'pick' | 'outbound';
 
@@ -156,10 +160,10 @@ const DEFAULT_DATA_SOURCES: DataSourceSettings = {
   pick: '/onedrive-dashboard/Pick.xlsx',
   outbound: '/onedrive-dashboard/Outbound.xlsx',
 };
-const DATA_SOURCE_ITEMS: { key: DataSourceKey; label: string; placeholder: string; fileName: string }[] = [
-  { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Inbound.xlsx' },
-  { key: 'pick', label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Pick.xlsx' },
-  { key: 'outbound', label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link', fileName: 'Outbound.xlsx' },
+const DATA_SOURCE_ITEMS: { key: DataSourceKey; label: string; placeholder: string; requiredSheets: string }[] = [
+  { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheets: inbound, put 15' },
+  { key: 'pick', label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Resuft' },
+  { key: 'outbound', label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Summary (or HLE + 1 PX)' },
 ];
 const CHART_ANIMATION = {
   enabled: true,
@@ -209,6 +213,8 @@ function App() {
   const [backendId, setBackendId] = useState<string | null>(null);
   const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ tone: 'idle', message: 'Ready' });
+  const [pickPageIndex, setPickPageIndex] = useState(0);
+  const [pickSlideCountdown, setPickSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
   const [outboundPageIndex, setOutboundPageIndex] = useState(0);
   const [outboundSlideCountdown, setOutboundSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
   
@@ -354,6 +360,27 @@ function App() {
   }, [dataSources]);
 
   useEffect(() => {
+    setPickSlideCountdown(SLIDE_INTERVAL_SECONDS);
+    let slideTimer: number | undefined;
+    const delayTimer = window.setTimeout(() => {
+      slideTimer = window.setInterval(() => {
+        setPickSlideCountdown((prev) => {
+          if (prev <= 1) {
+            setPickPageIndex((current) => (current + 1) % PICK_PAGE_COUNT);
+            return SLIDE_INTERVAL_SECONDS;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }, PICK_SLIDE_DELAY_SECONDS * 1000);
+
+    return () => {
+      window.clearTimeout(delayTimer);
+      if (slideTimer) window.clearInterval(slideTimer);
+    };
+  }, []);
+
+  useEffect(() => {
     const outboundPageCount = data?.outbound.pages?.length || 1;
     if (outboundPageCount <= 1) {
       setOutboundPageIndex(0);
@@ -362,17 +389,23 @@ function App() {
     }
 
     setOutboundSlideCountdown(SLIDE_INTERVAL_SECONDS);
-    const slideTimer = window.setInterval(() => {
-      setOutboundSlideCountdown((prev) => {
-        if (prev <= 1) {
-          setOutboundPageIndex((current) => (current + 1) % outboundPageCount);
-          return SLIDE_INTERVAL_SECONDS;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    let slideTimer: number | undefined;
+    const delayTimer = window.setTimeout(() => {
+      slideTimer = window.setInterval(() => {
+        setOutboundSlideCountdown((prev) => {
+          if (prev <= 1) {
+            setOutboundPageIndex((current) => (current + 1) % outboundPageCount);
+            return SLIDE_INTERVAL_SECONDS;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }, OUTBOUND_SLIDE_DELAY_SECONDS * 1000);
 
-    return () => window.clearInterval(slideTimer);
+    return () => {
+      window.clearTimeout(delayTimer);
+      if (slideTimer) window.clearInterval(slideTimer);
+    };
   }, [data?.outbound.pages?.length]);
 
   useEffect(() => {
@@ -470,7 +503,10 @@ function App() {
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      setUploadStatus({ tone: 'error', message: `${sourceKey} upload failed` });
+      const detail = axios.isAxiosError(error) && typeof error.response?.data?.detail === 'string'
+        ? error.response.data.detail
+        : `${sourceKey} upload failed`;
+      setUploadStatus({ tone: 'error', message: detail });
     } finally {
       setUploadingSource(null);
     }
@@ -686,6 +722,46 @@ function App() {
       pendingPercent: plan > 0 ? (pending / plan) * 100 : 0,
     };
   });
+  const pickPages = [
+    { key: 'progress', title: 'Progress 100%' },
+    { key: 'stocktake', title: 'Stocktake' },
+  ];
+  const pickCurrentPage = pickPages[pickPageIndex % pickPages.length] || pickPages[0];
+  const pickSlideProgress = ((SLIDE_INTERVAL_SECONDS - pickSlideCountdown) / SLIDE_INTERVAL_SECONDS) * 100;
+  const getPickGroupSummary = (label: string) => pickGroupSummaryRows.find((row) => row.label === label);
+  const pickHleSummary = getPickGroupSummary('HLE');
+  const pickOnePxSummary = getPickGroupSummary('1PX');
+  const pickStocktakePanels = [
+    {
+      title: 'COUNT # 1',
+      max: Math.max(pickChartPlan, data?.pick.chart.completed || 0, data?.pick.chart.pending || 0, 1),
+      rows: [
+        { label: 'TOTAL', value: pickChartPlan },
+        { label: 'COUNT', value: data?.pick.chart.completed || 0 },
+        { label: 'PENDING', value: data?.pick.chart.pending || 0 },
+        { label: 'DIFF', value: Math.max(pickChartPlan - (data?.pick.chart.completed || 0) - (data?.pick.chart.pending || 0), 0) },
+      ],
+    },
+    {
+      title: 'COUNT # 2',
+      max: Math.max(pickHleSummary?.plan || 0, pickHleSummary?.completed || 0, pickHleSummary?.pending || 0, 1),
+      rows: [
+        { label: 'TOTAL', value: pickHleSummary?.plan || 0 },
+        { label: 'COUNT', value: pickHleSummary?.completed || 0 },
+        { label: 'PENDING', value: pickHleSummary?.pending || 0 },
+        { label: 'DIFF', value: Math.max((pickHleSummary?.plan || 0) - (pickHleSummary?.completed || 0) - (pickHleSummary?.pending || 0), 0) },
+      ],
+    },
+    {
+      title: 'COUNT # 3',
+      max: Math.max(pickOnePxSummary?.plan || 0, pickOnePxSummary?.completed || 0, pickOnePxSummary?.pending || 0, 1),
+      rows: [
+        { label: 'TOTAL', value: pickOnePxSummary?.plan || 0 },
+        { label: 'COUNT', value: pickOnePxSummary?.completed || 0 },
+        { label: 'PENDING', value: pickOnePxSummary?.pending || 0 },
+      ],
+    },
+  ];
   const buildOutboundSummary = (rows: {
     planLoadDo: number;
     pendingDo: number;
@@ -725,13 +801,27 @@ function App() {
   const outboundCurrentPage = outboundPages[outboundPageIndex % outboundPages.length] || fallbackOutboundPage;
   const outboundPlanRows = outboundCurrentPage.plan_rows?.length ? outboundCurrentPage.plan_rows : fallbackOutboundPlanRows;
   const outboundPlanSummary = outboundCurrentPage.summary?.length ? outboundCurrentPage.summary : buildOutboundSummary(outboundPlanRows);
+  const outboundExcelSummary = [
+    { label: 'Direct', matches: (name: string) => name === 'direct' },
+    { label: 'Line Haul', matches: (name: string) => name.startsWith('hub') || name.includes('line haul') || name.includes('linehaul') },
+    { label: '1PX', matches: (name: string) => name === '1px' || name === '1 px' },
+    { label: 'Donation', matches: (name: string) => name === 'donation' },
+  ].map((group) => {
+    const rows = outboundPlanRows.filter((row) => group.matches(row.planLoad.trim().toLowerCase()));
+    return {
+      label: group.label,
+      pending: rows.reduce((sum, row) => sum + row.pendingMu, 0),
+      completed: rows.reduce((sum, row) => sum + row.completedMu, 0),
+    };
+  });
   const outboundSlideProgress = outboundPages.length > 1
     ? ((SLIDE_INTERVAL_SECONDS - outboundSlideCountdown) / SLIDE_INTERVAL_SECONDS) * 100
     : 0;
   const outboundSummaryChartOptions = {
     chart: {
       type: 'bar',
-      stacked: false,
+      stacked: true,
+      stackType: '100%',
       toolbar: { show: false },
       background: 'transparent',
       sparkline: { enabled: true },
@@ -740,9 +830,10 @@ function App() {
     plotOptions: {
       bar: {
         horizontal: true,
-        barHeight: '78%',
-        borderRadius: 2,
+        barHeight: '62%',
+        borderRadius: 4,
         borderRadiusApplication: 'end',
+        borderRadiusWhenStacked: 'last',
         distributed: false,
       },
     },
@@ -764,13 +855,13 @@ function App() {
         opacity: 0.35,
       },
     },
-    colors: ['#0ea5e9', '#10b981', '#f59e0b'],
+    colors: ['#facc15', '#0ea5e9'],
     stroke: {
       width: 0,
       colors: [isDarkMode ? '#1e293b' : '#ffffff'],
     },
     xaxis: {
-      categories: outboundPlanSummary.map((item) => item.label),
+      categories: outboundExcelSummary.map((item) => item.label),
       min: 0,
       max: 100,
       labels: { show: false },
@@ -790,9 +881,8 @@ function App() {
   };
   const getOutboundPercent = (value: number, total: number) => total > 0 ? (value / total) * 100 : 0;
   const outboundSummaryChartSeries = [
-    { name: 'Plan', data: outboundPlanSummary.map((item) => getOutboundPercent(item.total, item.total)) },
-    { name: 'Completed', data: outboundPlanSummary.map((item) => getOutboundPercent(item.completed, item.total)) },
-    { name: 'Pending', data: outboundPlanSummary.map((item) => getOutboundPercent(item.pending, item.total)) },
+    { name: 'Pending', data: outboundExcelSummary.map((item) => getOutboundPercent(item.pending, item.pending + item.completed)) },
+    { name: 'Complete', data: outboundExcelSummary.map((item) => getOutboundPercent(item.completed, item.pending + item.completed)) },
   ];
   return (
     <div className={isDarkMode ? 'dark' : ''}>
@@ -855,7 +945,7 @@ function App() {
                 </button>
 
                 {isSettingsOpen && (
-                  <div className="absolute right-0 mt-2 w-[520px] bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50">
+                  <div className="absolute right-0 mt-2 max-h-[calc(100vh-6rem)] w-[min(520px,calc(100vw-2rem))] overflow-y-auto overscroll-contain bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50">
                     <div className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700/50">Sync Interval</div>
                     {[
                       { label: '15 Minutes', value: 900 },
@@ -925,7 +1015,7 @@ function App() {
                               <div className="min-w-0">
                                 <div className="text-[11px] font-black uppercase tracking-wide text-sidebar dark:text-slate-100">{source.label}</div>
                                 <div className="mt-0.5 truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">
-                                  {fileInfo?.exists ? `${source.fileName} • ${fileInfo.modified_at}` : `Waiting for ${source.fileName}`}
+                                  {fileInfo?.exists ? `Ready • ${fileInfo.modified_at}` : `${source.requiredSheets} • Any .xlsx filename`}
                                 </div>
                               </div>
                               <label className={`cursor-pointer rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-wide text-white transition-colors ${
@@ -980,24 +1070,38 @@ function App() {
           </header>
 
           {/* Content Body */}
-          <div className="px-6 pt-6 pb-4 flex-1 flex flex-col gap-4 overflow-hidden">
+          <div className="px-6 pt-6 pb-4 flex-1 flex flex-col gap-4 overflow-hidden lg:overflow-visible">
 
             {/* Tri-Section Layout: Inbound | Pick | Outbound */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0 lg:min-h-[calc(100vh-8rem)] lg:items-stretch">
               
               {/* 1. INBOUND DETAILED VIEW (Left Column) */}
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <InboundProgress isDarkMode={isDarkMode} inboundData={data?.inbound} />
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden lg:overflow-visible">
+                <InboundProgress isDarkMode={isDarkMode} inboundData={data?.inbound} slideDelaySeconds={INBOUND_SLIDE_DELAY_SECONDS} />
               </div>
 
               {/* 2. PICK SECTION (Middle Column) */}
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden min-h-0 transition-colors duration-300">
-                <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden min-h-0 transition-colors duration-300 lg:overflow-visible">
+                <div className="relative p-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
+                  <div className="slide-progress-mask absolute left-0 right-0 top-0 h-1 bg-slate-200/70 dark:bg-slate-700/70">
+                    <div
+                      className="h-full bg-amber-500 transition-[width] duration-1000 ease-linear"
+                      style={{ width: `${pickSlideProgress}%` }}
+                    ></div>
+                  </div>
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-md"><TrendingUp size={16} /></div>
                     <h3 className="font-extrabold text-sidebar dark:text-white text-sm uppercase tracking-wide">2. Pick</h3>
                   </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking</span>
+                  <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1">
+                    {pickPages.map((page, idx) => (
+                      <span
+                        key={`${page.key}-dot`}
+                        className={`h-1.5 rounded-full transition-all duration-500 ${idx === pickPageIndex % pickPages.length ? 'w-5 bg-amber-500' : 'w-1.5 bg-slate-300 dark:bg-slate-600'}`}
+                      ></span>
+                    ))}
+                  </div>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking • {pickCurrentPage.title}</span>
                 </div>
                 
                 {/* Donut Chart Area */}
@@ -1026,8 +1130,10 @@ function App() {
                 </div>
 
                 {/* Table Area - Updated Headers */}
-                <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2">
-                  <div className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                <div className="mx-3 mt-2 mb-3 flex-1 min-h-0 overflow-y-auto flex flex-col rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2 lg:overflow-visible">
+                  {pickCurrentPage.key === 'progress' ? (
+                  <>
+                  <div key="pick-progress-page" className="shrink-0 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800 animate-outbound-page">
                     <div className="grid grid-cols-[46%_18%_18%_18%] bg-[#1F4E79] text-[10px] font-extrabold uppercase tracking-wider text-white">
                       <div className="border-r border-blue-200/30 px-2 py-2">Progress 100%</div>
                       <div className="border-r border-blue-200/30 px-2 py-2 text-right">Plan MU</div>
@@ -1062,7 +1168,6 @@ function App() {
                       ))}
                     </div>
                   </div>
-
                   <div className="mt-auto shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                     <table className="w-full border-collapse table-fixed text-[12px] font-bold text-sidebar dark:text-slate-100">
                       <thead>
@@ -1136,20 +1241,59 @@ function App() {
                       </tbody>
                     </table>
                   </div>
+                  </>
+                  ) : (
+                  <div key="pick-stocktake-page" className="flex min-h-[330px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-sidebar shadow-sm animate-outbound-page dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                    <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40">
+                      <div className="text-center text-[16px] font-black tracking-wide">STOCKTAKE DASHBOARD (1PX)</div>
+                      <div className="text-right text-[12px] font-black tabular-nums text-slate-600 dark:text-slate-300">
+                        {currentTime.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })} {currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </div>
+                    </div>
+                    <div className="grid flex-1 grid-cols-3 divide-x divide-slate-200 dark:divide-slate-700">
+                      {pickStocktakePanels.map((panel) => (
+                        <div key={panel.title} className="flex min-w-0 flex-col px-2 py-3">
+                          <div className="mb-2 text-center text-[18px] font-black tracking-wide text-slate-700 dark:text-slate-100">{panel.title}</div>
+                          <div className="relative flex-1 px-1 pb-7">
+                            <div className="absolute inset-x-0 bottom-7 top-2 flex flex-col justify-between">
+                              {[0, 1, 2, 3, 4].map((line) => (
+                                <div key={`${panel.title}-grid-${line}`} className="h-px bg-slate-200 dark:bg-slate-600"></div>
+                              ))}
+                            </div>
+                            <div className="relative z-10 grid h-full grid-cols-4 items-end gap-2">
+                              {panel.rows.map((row) => {
+                                const height = panel.max > 0 ? Math.max((row.value / panel.max) * 100, row.value > 0 ? 5 : 0) : 0;
+                                return (
+                                  <div key={`${panel.title}-${row.label}`} className="flex h-full min-w-0 flex-col items-center justify-end">
+                                    <div className="mb-1 text-[10px] font-bold tabular-nums text-slate-700 dark:text-slate-100">{row.value.toLocaleString()}</div>
+                                    <div className="w-7 rounded-t-sm bg-sky-500 dark:bg-sky-400" style={{ height: `${height}%` }}></div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 grid grid-cols-4 gap-1 px-0 text-center text-[8px] font-black leading-tight text-slate-600 dark:text-slate-300">
+                              {panel.rows.map((row) => (
+                                <div key={`${panel.title}-${row.label}-axis`} className="whitespace-normal break-words">{row.label}</div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  )}
                 </div>
               </div>
 
               {/* 3. OUTBOUND SECTION (Right Column) */}
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden min-h-0 transition-colors duration-300">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden min-h-0 transition-colors duration-300 lg:overflow-visible">
                 <div className="relative p-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
-                  {outboundPages.length > 1 && (
-                    <div className="absolute left-0 right-0 top-0 h-1 bg-slate-200/70 dark:bg-slate-700/70">
-                      <div
-                        className="h-full bg-emerald-500 transition-[width] duration-1000 ease-linear"
-                        style={{ width: `${outboundSlideProgress}%` }}
-                      ></div>
-                    </div>
-                  )}
+                  <div className="slide-progress-mask absolute left-0 right-0 top-0 h-1 bg-slate-200/70 dark:bg-slate-700/70">
+                    <div
+                      className="h-full bg-emerald-500 transition-[width] duration-1000 ease-linear"
+                      style={{ width: `${outboundSlideProgress}%` }}
+                    ></div>
+                  </div>
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-md"><ArrowUpFromLine size={16} /></div>
                     <h3 className="font-extrabold text-sidebar dark:text-white text-sm uppercase tracking-wide">3. Outbound</h3>
@@ -1166,13 +1310,14 @@ function App() {
                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-full">Dispatch • {outboundCurrentPage.title}</span>
                   </div>
                 </div>
-                <div key={outboundCurrentPage.key} className="flex-1 overflow-y-auto flex flex-col gap-3 p-3 border-t border-slate-100 dark:border-slate-700/50 animate-outbound-page">
+                <div key={outboundCurrentPage.key} className="flex-1 overflow-y-auto flex flex-col gap-3 p-3 border-t border-slate-100 dark:border-slate-700/50 animate-outbound-page lg:overflow-visible">
                   <div className="h-[154px] shrink-0 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 px-3 py-3">
-                    <div className="grid h-[108px] grid-cols-[112px_minmax(0,1fr)] gap-2 items-center">
-                      <div className="grid h-[96px] grid-rows-2 gap-2 text-[11px] font-black text-sidebar dark:text-slate-100">
-                        {outboundPlanSummary.map((item) => (
-                          <div key={`${item.label}-chart-label`} className="flex items-center justify-start text-left leading-tight">
-                            {item.label}
+                    <div className="grid h-[108px] grid-cols-[150px_minmax(0,1fr)] gap-2 items-center">
+                      <div className="grid h-[96px] grid-rows-4 gap-1 text-[11px] font-black text-sidebar dark:text-slate-100">
+                        {outboundExcelSummary.map((item) => (
+                          <div key={`${item.label}-chart-label`} className="grid min-w-0 grid-cols-[1fr_68px] items-center gap-2 text-left leading-tight">
+                            <span className="truncate">{item.label}</span>
+                            <span className="text-right font-mono text-[9px] tabular-nums text-sky-600 dark:text-sky-400">Plan {(item.pending + item.completed).toLocaleString()}</span>
                           </div>
                         ))}
                       </div>
@@ -1185,16 +1330,12 @@ function App() {
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-5 text-[10px] font-black text-slate-600 dark:text-slate-300">
                       <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-sky-500"></span>
-                        <span>Plan</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500"></span>
-                        <span>Completed</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm bg-amber-500"></span>
+                        <span className="h-2.5 w-2.5 rounded-sm bg-yellow-400"></span>
                         <span>Pending</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-sm bg-sky-500"></span>
+                        <span>Complete</span>
                       </div>
                     </div>
                   </div>
@@ -1203,27 +1344,31 @@ function App() {
                     <table className="w-full border-collapse table-fixed text-[12px] font-black text-sidebar dark:text-slate-100">
                       <tbody>
                         <tr>
-                          {outboundPlanSummary.map((item) => (
-                            <Fragment key={`${item.label}-total`}>
-                              <th className="w-[25%] border border-blue-200 dark:border-slate-600 bg-[#1F4E79] px-2 py-2 text-left text-white">{item.label}</th>
-                              <td className="w-[25%] border border-blue-100 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-center font-mono">{item.total.toLocaleString()}</td>
-                            </Fragment>
+                          {outboundExcelSummary.map((item) => (
+                            <th key={`${item.label}-pending-label`} className="w-1/4 border border-amber-200 bg-[#FCE4D6] px-1 py-2 text-center leading-tight text-red-700 dark:border-slate-600 dark:bg-amber-900/30 dark:text-amber-300">
+                              {item.label} Pending
+                            </th>
                           ))}
                         </tr>
                         <tr>
-                          {outboundPlanSummary.map((item) => (
-                            <Fragment key={`${item.label}-pending`}>
-                              <th className="border border-amber-200 dark:border-slate-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-2 text-left text-red-600 dark:text-amber-300">Pending</th>
-                              <td className="border border-amber-100 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-center font-mono text-red-600 dark:text-amber-300">{item.pending.toLocaleString()}</td>
-                            </Fragment>
+                          {outboundExcelSummary.map((item) => (
+                            <td key={`${item.label}-pending-value`} className="border border-amber-100 bg-white px-2 py-2 text-center font-mono text-red-600 dark:border-slate-600 dark:bg-slate-800 dark:text-amber-300">
+                              {item.pending.toLocaleString()}
+                            </td>
                           ))}
                         </tr>
                         <tr>
-                          {outboundPlanSummary.map((item) => (
-                            <Fragment key={`${item.label}-completed`}>
-                              <th className="border border-green-200 dark:border-slate-600 bg-green-50 dark:bg-green-900/30 px-2 py-2 text-left text-green-700 dark:text-green-300">Completed</th>
-                              <td className="border border-green-100 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-2 text-center font-mono dark:text-green-300">{item.completed.toLocaleString()}</td>
-                            </Fragment>
+                          {outboundExcelSummary.map((item) => (
+                            <th key={`${item.label}-completed-label`} className="border border-green-200 bg-[#E2F0D9] px-1 py-2 text-center leading-tight text-green-800 dark:border-slate-600 dark:bg-green-900/30 dark:text-green-300">
+                              {item.label} Complete
+                            </th>
+                          ))}
+                        </tr>
+                        <tr>
+                          {outboundExcelSummary.map((item) => (
+                            <td key={`${item.label}-completed-value`} className="border border-green-100 bg-white px-2 py-2 text-center font-mono text-green-700 dark:border-slate-600 dark:bg-slate-800 dark:text-green-300">
+                              {item.completed.toLocaleString()}
+                            </td>
                           ))}
                         </tr>
                       </tbody>

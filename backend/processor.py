@@ -8,6 +8,7 @@ INBOUND_PUTAWAY_SHEET_NAME = "put 15"
 PICK_SHEET_NAME = "Resuft"
 OUTBOUND_SHEET_NAME = "HLE"
 OUTBOUND_1PX_SHEET_NAME = "1 PX"
+OUTBOUND_SUMMARY_SHEET_NAME = "Summary"
 
 def _to_int(value) -> int:
     if pd.isna(value):
@@ -288,6 +289,55 @@ def _build_outbound_summary(rows: list[dict]) -> list[dict]:
         "completed": sum(row["completedMu"] for row in rows),
     }
     return [actual_order, receive]
+
+def parse_outbound_summary_sheet(df: pd.DataFrame) -> dict:
+    """Parse the consolidated outbound table from the ``Summary`` sheet (C:I)."""
+    rows = []
+    start_row = None
+
+    for row_idx in range(len(df.index)):
+        row = df.iloc[row_idx]
+        if _to_text(row.iloc[2]) == "Group HDC" and _to_text(row.iloc[3]) == "DO":
+            start_row = row_idx + 1
+            break
+
+    if start_row is None:
+        raise ValueError("Summary sheet does not contain the Group HDC outbound table")
+
+    for row_idx in range(start_row, len(df.index)):
+        row = df.iloc[row_idx]
+        group_name = _to_text(row.iloc[2]) if len(row) > 2 else ""
+        if not group_name:
+            if rows:
+                break
+            continue
+        if group_name.lower() == "total":
+            break
+
+        rows.append({
+            "site": "HDC",
+            "planLoad": group_name,
+            "planLoadDo": _to_int(row.iloc[3]) if len(row) > 3 else 0,
+            "pendingDo": _to_int(row.iloc[5]) if len(row) > 5 else 0,
+            "pendingMu": _to_int(row.iloc[6]) if len(row) > 6 else 0,
+            "completedDo": _to_int(row.iloc[7]) if len(row) > 7 else 0,
+            "completedMu": _to_int(row.iloc[8]) if len(row) > 8 else 0,
+        })
+
+    if not rows:
+        raise ValueError("Summary sheet outbound table has no data rows")
+
+    summary = _build_outbound_summary(rows)
+    return {
+        "plan_rows": rows,
+        "summary": summary,
+        "page": {
+            "key": "summary",
+            "title": "Summary",
+            "plan_rows": rows,
+            "summary": summary,
+        },
+    }
 
 def parse_outbound_hle_sheet(df: pd.DataFrame) -> dict:
     """

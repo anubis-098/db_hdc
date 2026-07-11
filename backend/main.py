@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sharepoint import download_excel_from_link, get_excel_sheet_names_from_source, get_source_info, read_excel_sheet_from_source
 from processor import (
     OUTBOUND_1PX_SHEET_NAME,
+    OUTBOUND_SUMMARY_SHEET_NAME,
     INBOUND_PUTAWAY_SHEET_NAME,
     INBOUND_SHEET_NAME,
     PICK_SHEET_NAME,
@@ -11,6 +12,7 @@ from processor import (
     parse_inbound_putaway_sheet,
     parse_outbound_1px_sheet,
     parse_outbound_hle_sheet,
+    parse_outbound_summary_sheet,
     parse_pick_progress_sheet,
     process_data,
     generate_mock_data,
@@ -43,6 +45,11 @@ SOURCE_FILE_NAMES = {
     "inbound": "Inbound.xlsx",
     "pick": "Pick.xlsx",
     "outbound": "Outbound.xlsx",
+}
+SOURCE_REQUIRED_SHEETS = {
+    "inbound": [INBOUND_SHEET_NAME, INBOUND_PUTAWAY_SHEET_NAME],
+    "pick": [PICK_SHEET_NAME],
+    "outbound": [],
 }
 
 class DataSourceSettings(BaseModel):
@@ -246,16 +253,25 @@ def update_cache():
 
         if data_sources["outbound"]:
             try:
-                outbound_df = read_excel_sheet_from_source(data_sources["outbound"], OUTBOUND_SHEET_NAME, header=None)
-                outbound_hle = parse_outbound_hle_sheet(outbound_df)
-                dashboard_data["outbound"].update(outbound_hle)
-                dashboard_data["outbound"]["pages"] = [outbound_hle["page"]]
+                outbound_sheet_names = get_excel_sheet_names_from_source(data_sources["outbound"])
+                if OUTBOUND_SUMMARY_SHEET_NAME in outbound_sheet_names:
+                    outbound_df = read_excel_sheet_from_source(data_sources["outbound"], OUTBOUND_SUMMARY_SHEET_NAME, header=None)
+                    outbound_summary = parse_outbound_summary_sheet(outbound_df)
+                    dashboard_data["outbound"].update(outbound_summary)
+                    dashboard_data["outbound"]["pages"] = [outbound_summary["page"]]
+                    mapped_sheets = [OUTBOUND_SUMMARY_SHEET_NAME]
+                else:
+                    outbound_df = read_excel_sheet_from_source(data_sources["outbound"], OUTBOUND_SHEET_NAME, header=None)
+                    outbound_hle = parse_outbound_hle_sheet(outbound_df)
+                    dashboard_data["outbound"].update(outbound_hle)
+                    dashboard_data["outbound"]["pages"] = [outbound_hle["page"]]
 
-                outbound_1px_df = read_excel_sheet_from_source(data_sources["outbound"], OUTBOUND_1PX_SHEET_NAME, header=None)
-                outbound_1px = parse_outbound_1px_sheet(outbound_1px_df)
-                dashboard_data["outbound"]["pages"].append(outbound_1px["page"])
+                    outbound_1px_df = read_excel_sheet_from_source(data_sources["outbound"], OUTBOUND_1PX_SHEET_NAME, header=None)
+                    outbound_1px = parse_outbound_1px_sheet(outbound_1px_df)
+                    dashboard_data["outbound"]["pages"].append(outbound_1px["page"])
+                    mapped_sheets = [OUTBOUND_SHEET_NAME, OUTBOUND_1PX_SHEET_NAME]
                 source_status.setdefault("outbound", {})["mapped"] = True
-                source_status.setdefault("outbound", {})["mapped_sheets"] = [OUTBOUND_SHEET_NAME, OUTBOUND_1PX_SHEET_NAME]
+                source_status.setdefault("outbound", {})["mapped_sheets"] = mapped_sheets
             except Exception as exc:
                 source_errors["outbound"] = str(exc)
                 source_status["outbound"] = {
@@ -387,6 +403,33 @@ async def upload_excel_source(source_key: str, client_id: str = Form(...), file:
                 if total_size > max_size:
                     raise HTTPException(status_code=413, detail="File is larger than 50MB")
                 output.write(chunk)
+
+        try:
+            sheet_names = get_excel_sheet_names_from_source(str(temp_path))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="The uploaded file is not a valid .xlsx workbook") from exc
+
+        missing_sheets = [
+            sheet_name
+            for sheet_name in SOURCE_REQUIRED_SHEETS[source_key]
+            if sheet_name not in sheet_names
+        ]
+        if source_key == "outbound":
+            has_summary = OUTBOUND_SUMMARY_SHEET_NAME in sheet_names
+            has_legacy_sheets = all(
+                sheet_name in sheet_names
+                for sheet_name in (OUTBOUND_SHEET_NAME, OUTBOUND_1PX_SHEET_NAME)
+            )
+            if not has_summary and not has_legacy_sheets:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This file does not match outbound. Required: Summary, or both HLE and 1 PX sheets",
+                )
+        if missing_sheets:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This file does not match {source_key}. Missing sheet(s): {', '.join(missing_sheets)}",
+            )
 
         temp_path.replace(target_path)
     finally:
