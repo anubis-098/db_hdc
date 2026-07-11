@@ -7,6 +7,7 @@ from processor import (
     INBOUND_PUTAWAY_SHEET_NAME,
     INBOUND_SHEET_NAME,
     PICK_SHEET_NAME,
+    PICK_STOCKTAKE_SHEET_NAME,
     OUTBOUND_SHEET_NAME,
     parse_inbound_progress_sheet,
     parse_inbound_putaway_sheet,
@@ -14,6 +15,7 @@ from processor import (
     parse_outbound_hle_sheet,
     parse_outbound_summary_sheet,
     parse_pick_progress_sheet,
+    parse_pick_stocktake_sheet,
     process_data,
     generate_mock_data,
     merge_multiple_dfs,
@@ -39,22 +41,26 @@ UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", "/uploads"))
 DEFAULT_DATA_SOURCES = {
     "inbound": os.getenv("INBOUND_SOURCE", "example/Inbound.xlsx"),
     "pick": os.getenv("PICK_SOURCE", "example/HLE-13-06-26.xlsx"),
+    "pick_stocktake": os.getenv("PICK_STOCKTAKE_SOURCE", "example/DASHBOARD-ST.xlsx"),
     "outbound": os.getenv("OUTBOUND_SOURCE", "example/Dispatch Report.xlsx"),
 }
 SOURCE_FILE_NAMES = {
     "inbound": "Inbound.xlsx",
     "pick": "Pick.xlsx",
+    "pick_stocktake": "DASHBOARD-ST.xlsx",
     "outbound": "Outbound.xlsx",
 }
 SOURCE_REQUIRED_SHEETS = {
     "inbound": [INBOUND_SHEET_NAME, INBOUND_PUTAWAY_SHEET_NAME],
     "pick": [PICK_SHEET_NAME],
+    "pick_stocktake": [PICK_STOCKTAKE_SHEET_NAME],
     "outbound": [],
 }
 
 class DataSourceSettings(BaseModel):
     inbound: str = ""
     pick: str = ""
+    pick_stocktake: str = ""
     outbound: str = ""
 
 class ActiveUploadClient(BaseModel):
@@ -73,6 +79,7 @@ def load_data_sources() -> dict:
         return {
             "inbound": str(data.get("inbound", DEFAULT_DATA_SOURCES["inbound"])).strip(),
             "pick": str(data.get("pick", DEFAULT_DATA_SOURCES["pick"])).strip(),
+            "pick_stocktake": str(data.get("pick_stocktake", DEFAULT_DATA_SOURCES["pick_stocktake"])).strip(),
             "outbound": str(data.get("outbound", DEFAULT_DATA_SOURCES["outbound"])).strip(),
         }
     except (OSError, json.JSONDecodeError):
@@ -110,7 +117,7 @@ def set_active_upload_client(client_id: str) -> dict:
     return sources
 
 def clear_data_sources() -> dict:
-    return save_data_sources(DataSourceSettings(inbound="", pick="", outbound=""))
+    return save_data_sources(DataSourceSettings(inbound="", pick="", pick_stocktake="", outbound=""))
 
 def get_file_info(path: Path) -> dict:
     if not path.exists() or not path.is_file():
@@ -162,6 +169,7 @@ def empty_dashboard_data() -> dict:
             "chart": {"completed": 0, "pending": 0, "plan": 0},
             "table": [],
             "size_summary": [],
+            "stocktake_pages": [],
         },
         "outbound": {
             "chart": [],
@@ -247,6 +255,21 @@ def update_cache():
             except Exception as exc:
                 source_errors["pick"] = str(exc)
                 source_status["pick"] = {
+                    "status": "error",
+                    "message": str(exc),
+                }
+
+        if data_sources["pick_stocktake"]:
+            try:
+                stocktake_df = read_excel_sheet_from_source(
+                    data_sources["pick_stocktake"], PICK_STOCKTAKE_SHEET_NAME, header=None
+                )
+                dashboard_data["pick"].update(parse_pick_stocktake_sheet(stocktake_df))
+                source_status.setdefault("pick_stocktake", {})["mapped"] = True
+                source_status.setdefault("pick_stocktake", {})["mapped_sheets"] = [PICK_STOCKTAKE_SHEET_NAME]
+            except Exception as exc:
+                source_errors["pick_stocktake"] = str(exc)
+                source_status["pick_stocktake"] = {
                     "status": "error",
                     "message": str(exc),
                 }
@@ -380,7 +403,7 @@ def set_upload_client(payload: ActiveUploadClient):
 async def upload_excel_source(source_key: str, client_id: str = Form(...), file: UploadFile = File(...)):
     source_key = source_key.lower().strip()
     if source_key not in SOURCE_FILE_NAMES:
-        raise HTTPException(status_code=400, detail="source_key must be inbound, pick, or outbound")
+        raise HTTPException(status_code=400, detail="source_key must be inbound, pick, pick_stocktake, or outbound")
 
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):

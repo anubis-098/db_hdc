@@ -17,6 +17,7 @@ services:
       - UPLOAD_ROOT=/uploads
       - INBOUND_SOURCE=/onedrive-dashboard/Inbound.xlsx
       - PICK_SOURCE=/onedrive-dashboard/Pick.xlsx
+      - PICK_STOCKTAKE_SOURCE=/onedrive-dashboard/DASHBOARD-ST.xlsx
       - OUTBOUND_SOURCE=/onedrive-dashboard/Outbound.xlsx
       - USE_MOCK=true
       - EXCEL_URLS= # ใส่หลายลิงก์แยกด้วยคอมมา เช่น url1,url2

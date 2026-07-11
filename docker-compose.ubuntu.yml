@@ -17,6 +17,7 @@ services:
       - UPLOAD_ROOT=/uploads
       - INBOUND_SOURCE=/onedrive-dashboard/Inbound.xlsx
       - PICK_SOURCE=/onedrive-dashboard/Pick.xlsx
+      - PICK_STOCKTAKE_SOURCE=/onedrive-dashboard/DASHBOARD-ST.xlsx
       - OUTBOUND_SOURCE=/onedrive-dashboard/Outbound.xlsx
       - USE_MOCK=false
       - EXCEL_URLS=

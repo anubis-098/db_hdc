@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Pause, Play } from 'lucide-react';
 
 interface SummaryData {
   wh: string;
@@ -57,6 +57,7 @@ const InboundProgress = ({
 }) => {
   const [detailPageIndex, setDetailPageIndex] = useState(0);
   const [detailSlideCountdown, setDetailSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
+  const [isSlidePaused, setIsSlidePaused] = useState(false);
   const fallbackReceivePage: InboundPage = {
     key: 'receive',
     title: 'Receive',
@@ -82,6 +83,7 @@ const InboundProgress = ({
       setDetailSlideCountdown(SLIDE_INTERVAL_SECONDS);
       return;
     }
+    if (isSlidePaused) return;
 
     setDetailSlideCountdown(SLIDE_INTERVAL_SECONDS);
     let timer: number | undefined;
@@ -101,7 +103,7 @@ const InboundProgress = ({
       window.clearTimeout(delayTimer);
       if (timer) window.clearInterval(timer);
     };
-  }, [detailPages.length, slideDelaySeconds]);
+  }, [detailPages.length, slideDelaySeconds, isSlidePaused]);
 
   const fallbackSummaryList: SummaryData[] = [];
   const summaryList = receivePage.summary_list?.length ? receivePage.summary_list : fallbackSummaryList;
@@ -244,6 +246,17 @@ const InboundProgress = ({
           <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10 px-2 py-1 rounded-full">
             {currentPage.title}
           </span>
+          <button
+            type="button"
+            onClick={() => setIsSlidePaused((paused) => !paused)}
+            disabled={detailPages.length <= 1}
+            aria-label={isSlidePaused ? 'Resume Inbound page rotation' : 'Pause Inbound page rotation'}
+            aria-pressed={isSlidePaused}
+            title={isSlidePaused ? 'Resume page rotation' : 'Pause page rotation'}
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${isSlidePaused ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-500/20 dark:text-blue-300' : 'border-slate-200 bg-white text-slate-500 hover:text-blue-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}
+          >
+            {isSlidePaused ? <Play size={13} /> : <Pause size={13} />}
+          </button>
         </div>
       </div>
 

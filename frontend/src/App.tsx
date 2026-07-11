@@ -5,7 +5,7 @@ import {
 import axios from 'axios';
 import { 
   RefreshCcw, Database, Package, Clock, Settings, LayoutDashboard,
-  TrendingUp, ArrowUpFromLine
+  TrendingUp, ArrowUpFromLine, Pause, Play
 } from 'lucide-react';
 
 import InboundProgress from './components/InboundProgress';
@@ -77,6 +77,15 @@ interface DashboardData {
     chart: { completed: number; pending: number; plan?: number };
     table: { group: string; loading_date: string; group_hdc: string; status: string; sum_total_mu: number; size?: 'S' | 'M' | 'L'; product_size_hle?: 'S' | 'M' | 'L' }[];
     size_summary?: { size: 'S' | 'M' | 'L'; picked: string; totalMu: number; percent?: number }[];
+    stocktake_pages?: {
+      key: string;
+      title: string;
+      dashboard_title: string;
+      panels: {
+        title: string;
+        rows: { label: string; value: number }[];
+      }[];
+    }[];
   };
   outbound: {
     chart: { route: string; progress: number; total: number }[];
@@ -129,9 +138,7 @@ const SLIDE_INTERVAL_SECONDS = 30;
 const INBOUND_SLIDE_DELAY_SECONDS = 0;
 const PICK_SLIDE_DELAY_SECONDS = 1;
 const OUTBOUND_SLIDE_DELAY_SECONDS = 2;
-const PICK_PAGE_COUNT = 2;
-
-type DataSourceKey = 'inbound' | 'pick' | 'outbound';
+type DataSourceKey = 'inbound' | 'pick' | 'pick_stocktake' | 'outbound';
 
 type UploadFileInfo = {
   exists: boolean;
@@ -147,6 +154,7 @@ type UploadClient = {
 interface DataSourceSettings {
   inbound: string;
   pick: string;
+  pick_stocktake: string;
   outbound: string;
 }
 
@@ -158,11 +166,13 @@ type SyncStatus = {
 const DEFAULT_DATA_SOURCES: DataSourceSettings = {
   inbound: '/onedrive-dashboard/Inbound.xlsx',
   pick: '/onedrive-dashboard/Pick.xlsx',
+  pick_stocktake: '/onedrive-dashboard/DASHBOARD-ST.xlsx',
   outbound: '/onedrive-dashboard/Outbound.xlsx',
 };
 const DATA_SOURCE_ITEMS: { key: DataSourceKey; label: string; placeholder: string; requiredSheets: string }[] = [
   { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheets: inbound, put 15' },
   { key: 'pick', label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Resuft' },
+  { key: 'pick_stocktake', label: '2. Pick Stocktake', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: DASHBOARD' },
   { key: 'outbound', label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Summary (or HLE + 1 PX)' },
 ];
 const CHART_ANIMATION = {
@@ -215,8 +225,10 @@ function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ tone: 'idle', message: 'Ready' });
   const [pickPageIndex, setPickPageIndex] = useState(0);
   const [pickSlideCountdown, setPickSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
+  const [isPickSlidePaused, setIsPickSlidePaused] = useState(false);
   const [outboundPageIndex, setOutboundPageIndex] = useState(0);
   const [outboundSlideCountdown, setOutboundSlideCountdown] = useState(SLIDE_INTERVAL_SECONDS);
+  const [isOutboundSlidePaused, setIsOutboundSlidePaused] = useState(false);
   
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -360,13 +372,16 @@ function App() {
   }, [dataSources]);
 
   useEffect(() => {
+    const pickPageCount = 1 + (data?.pick.stocktake_pages?.length || 1);
+    setPickPageIndex((current) => current % pickPageCount);
+    if (isPickSlidePaused) return;
     setPickSlideCountdown(SLIDE_INTERVAL_SECONDS);
     let slideTimer: number | undefined;
     const delayTimer = window.setTimeout(() => {
       slideTimer = window.setInterval(() => {
         setPickSlideCountdown((prev) => {
           if (prev <= 1) {
-            setPickPageIndex((current) => (current + 1) % PICK_PAGE_COUNT);
+            setPickPageIndex((current) => (current + 1) % pickPageCount);
             return SLIDE_INTERVAL_SECONDS;
           }
           return prev - 1;
@@ -378,7 +393,7 @@ function App() {
       window.clearTimeout(delayTimer);
       if (slideTimer) window.clearInterval(slideTimer);
     };
-  }, []);
+  }, [data?.pick.stocktake_pages?.length, isPickSlidePaused]);
 
   useEffect(() => {
     const outboundPageCount = data?.outbound.pages?.length || 1;
@@ -387,6 +402,7 @@ function App() {
       setOutboundSlideCountdown(SLIDE_INTERVAL_SECONDS);
       return;
     }
+    if (isOutboundSlidePaused) return;
 
     setOutboundSlideCountdown(SLIDE_INTERVAL_SECONDS);
     let slideTimer: number | undefined;
@@ -406,7 +422,7 @@ function App() {
       window.clearTimeout(delayTimer);
       if (slideTimer) window.clearInterval(slideTimer);
     };
-  }, [data?.outbound.pages?.length]);
+  }, [data?.outbound.pages?.length, isOutboundSlidePaused]);
 
   useEffect(() => {
     axios.get('/api/settings/data-sources')
@@ -722,16 +738,19 @@ function App() {
       pendingPercent: plan > 0 ? (pending / plan) * 100 : 0,
     };
   });
+  const uploadedPickStocktakePages = data?.pick.stocktake_pages?.length
+    ? data.pick.stocktake_pages
+    : [{ key: '1px', title: '1PX', dashboard_title: 'STOCKTAKE DASHBOARD (1PX)', panels: [] }];
   const pickPages = [
-    { key: 'progress', title: 'Progress 100%' },
-    { key: 'stocktake', title: 'Stocktake' },
+    { key: 'progress', title: 'Progress 100%', dashboard_title: '', panels: [] },
+    ...uploadedPickStocktakePages,
   ];
   const pickCurrentPage = pickPages[pickPageIndex % pickPages.length] || pickPages[0];
   const pickSlideProgress = ((SLIDE_INTERVAL_SECONDS - pickSlideCountdown) / SLIDE_INTERVAL_SECONDS) * 100;
   const getPickGroupSummary = (label: string) => pickGroupSummaryRows.find((row) => row.label === label);
   const pickHleSummary = getPickGroupSummary('HLE');
   const pickOnePxSummary = getPickGroupSummary('1PX');
-  const pickStocktakePanels = [
+  const fallbackPickStocktakePanels = [
     {
       title: 'COUNT # 1',
       max: Math.max(pickChartPlan, data?.pick.chart.completed || 0, data?.pick.chart.pending || 0, 1),
@@ -762,6 +781,12 @@ function App() {
       ],
     },
   ];
+  const pickStocktakePanels = pickCurrentPage.panels.length
+    ? pickCurrentPage.panels.map((panel) => ({
+        ...panel,
+        max: Math.max(...panel.rows.map((row) => row.value), 1),
+      }))
+    : fallbackPickStocktakePanels;
   const buildOutboundSummary = (rows: {
     planLoadDo: number;
     pendingDo: number;
@@ -886,7 +911,7 @@ function App() {
   ];
   return (
     <div className={isDarkMode ? 'dark' : ''}>
-      <div className="min-h-screen bg-background-light dark:bg-slate-900 relative transition-colors duration-300">
+      <div className="relative h-screen overflow-hidden bg-background-light transition-colors duration-300 dark:bg-slate-900">
         
         {/* Watermark Overlay */}
         <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center overflow-hidden">
@@ -900,7 +925,7 @@ function App() {
           </div>
         </div>
 
-        <main className="flex flex-col min-h-screen min-w-0">
+        <main className="flex h-full min-w-0 flex-col overflow-hidden">
           {/* Header */}
           <header className="h-20 flex items-center justify-between px-8 bg-background-light dark:bg-slate-900 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800 shadow-sm relative shrink-0 transition-colors duration-300">
             <div className="flex flex-col">
@@ -1070,10 +1095,10 @@ function App() {
           </header>
 
           {/* Content Body */}
-          <div className="px-6 pt-6 pb-4 flex-1 flex flex-col gap-4 overflow-hidden lg:overflow-visible">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-6 pb-4 pt-6">
 
             {/* Tri-Section Layout: Inbound | Pick | Outbound */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0 lg:min-h-[calc(100vh-8rem)] lg:items-stretch">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-3 lg:items-stretch">
               
               {/* 1. INBOUND DETAILED VIEW (Left Column) */}
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden lg:overflow-visible">
@@ -1101,7 +1126,19 @@ function App() {
                       ></span>
                     ))}
                   </div>
-                  <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking • {pickCurrentPage.title}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">Picking • {pickCurrentPage.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsPickSlidePaused((paused) => !paused)}
+                      aria-label={isPickSlidePaused ? 'Resume Pick page rotation' : 'Pause Pick page rotation'}
+                      aria-pressed={isPickSlidePaused}
+                      title={isPickSlidePaused ? 'Resume page rotation' : 'Pause page rotation'}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors ${isPickSlidePaused ? 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-500/20 dark:text-amber-300' : 'border-slate-200 bg-white text-slate-500 hover:text-amber-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}
+                    >
+                      {isPickSlidePaused ? <Play size={13} /> : <Pause size={13} />}
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Donut Chart Area */}
@@ -1243,9 +1280,9 @@ function App() {
                   </div>
                   </>
                   ) : (
-                  <div key="pick-stocktake-page" className="flex min-h-[330px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-sidebar shadow-sm animate-outbound-page dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                  <div key={`pick-stocktake-${pickCurrentPage.key}`} className="flex min-h-[330px] flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-sidebar shadow-sm animate-outbound-page dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
                     <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40">
-                      <div className="text-center text-[16px] font-black tracking-wide">STOCKTAKE DASHBOARD (1PX)</div>
+                      <div className="text-center text-[16px] font-black tracking-wide">{pickCurrentPage.dashboard_title}</div>
                       <div className="text-right text-[12px] font-black tabular-nums text-slate-600 dark:text-slate-300">
                         {currentTime.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })} {currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                       </div>
@@ -1308,6 +1345,17 @@ function App() {
                       ))}
                     </div>
                     <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-full">Dispatch • {outboundCurrentPage.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsOutboundSlidePaused((paused) => !paused)}
+                      disabled={outboundPages.length <= 1}
+                      aria-label={isOutboundSlidePaused ? 'Resume Outbound page rotation' : 'Pause Outbound page rotation'}
+                      aria-pressed={isOutboundSlidePaused}
+                      title={isOutboundSlidePaused ? 'Resume page rotation' : 'Pause page rotation'}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${isOutboundSlidePaused ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'border-slate-200 bg-white text-slate-500 hover:text-emerald-600 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}
+                    >
+                      {isOutboundSlidePaused ? <Play size={13} /> : <Pause size={13} />}
+                    </button>
                   </div>
                 </div>
                 <div key={outboundCurrentPage.key} className="flex-1 overflow-y-auto flex flex-col gap-3 p-3 border-t border-slate-100 dark:border-slate-700/50 animate-outbound-page lg:overflow-visible">
@@ -1375,35 +1423,35 @@ function App() {
                     </table>
                   </div>
 
-                  <div className="flex-1 min-h-[260px] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-                    <table className="h-full w-full border-collapse table-fixed text-[11px] font-black text-sidebar dark:text-slate-100">
+                  <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                    <table className="outbound-detail-table h-full w-full table-fixed border-collapse font-black text-sidebar dark:text-slate-100">
                       <thead>
                         <tr className="bg-[#1F4E79] text-white">
-                          <th className="w-[16%] border border-blue-200/30 dark:border-slate-600 px-2 py-2 text-center" rowSpan={2}>Site</th>
-                          <th className="w-[24%] border border-blue-200/30 dark:border-slate-600 px-2 py-2 text-center" rowSpan={2}>Plan Load</th>
-                          <th className="w-[16%] border border-blue-200/30 dark:border-slate-600 px-2 py-2 text-center" rowSpan={2}>Plan Load DO</th>
-                          <th className="w-[22%] border border-blue-200/30 dark:border-slate-600 px-2 py-1.5 text-center" colSpan={2}>Pending</th>
-                          <th className="w-[22%] border border-blue-200/30 dark:border-slate-600 px-2 py-1.5 text-center" colSpan={2}>Completed</th>
+                          <th className="w-[13%] border border-blue-200/30 px-1 py-1 text-center dark:border-slate-600" rowSpan={2}>Site</th>
+                          <th className="w-[25%] border border-blue-200/30 px-1 py-1 text-center dark:border-slate-600" rowSpan={2}>Plan Load</th>
+                          <th className="w-[14%] border border-blue-200/30 px-1 py-1 text-center dark:border-slate-600" rowSpan={2}>Plan DO</th>
+                          <th className="w-[24%] border border-blue-200/30 px-1 py-1 text-center dark:border-slate-600" colSpan={2}>Pending</th>
+                          <th className="w-[24%] border border-blue-200/30 px-1 py-1 text-center dark:border-slate-600" colSpan={2}>Completed</th>
                         </tr>
                         <tr className="bg-slate-50 dark:bg-slate-800 text-sidebar dark:text-white">
-                          <th className="border border-slate-200 dark:border-slate-600 px-2 py-2 text-center">DO</th>
-                          <th className="border border-slate-200 dark:border-slate-600 px-2 py-2 text-center">QTY MU</th>
-                          <th className="border border-slate-200 dark:border-slate-600 px-2 py-2 text-center">DO</th>
-                          <th className="border border-slate-200 dark:border-slate-600 px-2 py-2 text-center">QTY MU</th>
+                          <th className="border border-slate-200 px-1 py-1 text-center dark:border-slate-600">DO</th>
+                          <th className="border border-slate-200 px-1 py-1 text-center dark:border-slate-600">MU</th>
+                          <th className="border border-slate-200 px-1 py-1 text-center dark:border-slate-600">DO</th>
+                          <th className="border border-slate-200 px-1 py-1 text-center dark:border-slate-600">MU</th>
                         </tr>
                       </thead>
                       <tbody>
                         {outboundPlanRows.map((row, idx) => (
                           <tr key={row.planLoad}>
                             {idx === 0 && (
-                              <td className="border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-1 py-2 text-center text-[30px] font-black tracking-wide text-[#5B9BD5] dark:text-blue-300" rowSpan={outboundPlanRows.length}>{row.site || 'HDC'}</td>
+                              <td className="outbound-site-label border border-slate-200 bg-white px-1 py-0.5 text-center font-black text-[#5B9BD5] dark:border-slate-600 dark:bg-slate-800 dark:text-blue-300" rowSpan={outboundPlanRows.length}>{row.site || 'HDC'}</td>
                             )}
-                            <td className="border border-blue-100 dark:border-slate-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1.5 text-left">{row.planLoad}</td>
-                            <td className="border border-blue-100 dark:border-slate-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1.5 text-center font-mono">{row.planLoadDo.toLocaleString()}</td>
-                            <td className="border border-amber-100 dark:border-slate-600 bg-amber-50 dark:bg-yellow-900/30 px-2 py-1.5 text-center font-mono text-red-600 dark:text-red-400">{row.pendingDo.toLocaleString()}</td>
-                            <td className="border border-amber-100 dark:border-slate-600 bg-amber-50 dark:bg-yellow-900/30 px-2 py-1.5 text-center font-mono text-red-600 dark:text-red-400">{row.pendingMu.toLocaleString()}</td>
-                            <td className="border border-green-100 dark:border-slate-600 bg-green-50 dark:bg-green-900/30 px-2 py-1.5 text-center font-mono text-green-900 dark:text-green-300">{row.completedDo.toLocaleString()}</td>
-                            <td className="border border-green-100 dark:border-slate-600 bg-green-50 dark:bg-green-900/30 px-2 py-1.5 text-center font-mono text-green-900 dark:text-green-300">{row.completedMu.toLocaleString()}</td>
+                            <td className="truncate border border-blue-100 bg-blue-50 px-1 py-0.5 text-left dark:border-slate-600 dark:bg-blue-900/30">{row.planLoad}</td>
+                            <td className="border border-blue-100 bg-blue-50 px-1 py-0.5 text-center font-mono dark:border-slate-600 dark:bg-blue-900/30">{row.planLoadDo.toLocaleString()}</td>
+                            <td className="border border-amber-100 bg-amber-50 px-1 py-0.5 text-center font-mono text-red-600 dark:border-slate-600 dark:bg-yellow-900/30 dark:text-red-400">{row.pendingDo.toLocaleString()}</td>
+                            <td className="border border-amber-100 bg-amber-50 px-1 py-0.5 text-center font-mono text-red-600 dark:border-slate-600 dark:bg-yellow-900/30 dark:text-red-400">{row.pendingMu.toLocaleString()}</td>
+                            <td className="border border-green-100 bg-green-50 px-1 py-0.5 text-center font-mono text-green-900 dark:border-slate-600 dark:bg-green-900/30 dark:text-green-300">{row.completedDo.toLocaleString()}</td>
+                            <td className="border border-green-100 bg-green-50 px-1 py-0.5 text-center font-mono text-green-900 dark:border-slate-600 dark:bg-green-900/30 dark:text-green-300">{row.completedMu.toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>

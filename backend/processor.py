@@ -1,11 +1,13 @@
 import pandas as pd
 import random
+import re
 import uuid
 from datetime import datetime, timedelta
 
 INBOUND_SHEET_NAME = "inbound"
 INBOUND_PUTAWAY_SHEET_NAME = "put 15"
 PICK_SHEET_NAME = "Resuft"
+PICK_STOCKTAKE_SHEET_NAME = "DASHBOARD"
 OUTBOUND_SHEET_NAME = "HLE"
 OUTBOUND_1PX_SHEET_NAME = "1 PX"
 OUTBOUND_SUMMARY_SHEET_NAME = "Summary"
@@ -274,6 +276,56 @@ def parse_pick_progress_sheet(df: pd.DataFrame) -> dict:
         "table": rows,
         "size_summary": size_summary,
     }
+
+def parse_pick_stocktake_sheet(df: pd.DataFrame) -> dict:
+    """Parse the 1PX stocktake block from DASHBOARD-ST.xlsx."""
+    pages = []
+
+    for row_idx in range(len(df.index)):
+        row = df.iloc[row_idx]
+        title = next(
+            (_to_text(value) for value in row.tolist() if "STOCKTAKE DASHBOARD" in _to_text(value).upper()),
+            "",
+        )
+        if not title:
+            continue
+
+        match = re.search(r"\(([^)]+)\)", title)
+        group = match.group(1).strip().upper() if match else title.strip().upper()
+        if group != "1PX":
+            continue
+        panels = []
+
+        for scan_idx in range(row_idx + 1, min(row_idx + 20, len(df.index) - 1)):
+            label_row = df.iloc[scan_idx]
+            first_label = _to_text(label_row.iloc[1]) if len(label_row) > 1 else ""
+            count_label = _to_text(label_row.iloc[2]) if len(label_row) > 2 else ""
+            if first_label.strip().upper() != "TOTAL" or not count_label.upper().startswith("COUNT"):
+                continue
+
+            value_row = df.iloc[scan_idx + 1]
+            labels = [_to_text(label_row.iloc[col]).strip() for col in range(1, 5)]
+            values = [_to_int(value_row.iloc[col]) for col in range(1, 5)]
+            count_number = re.search(r"\d+", count_label)
+            panels.append({
+                "title": f"COUNT # {count_number.group(0) if count_number else len(panels) + 1}",
+                "rows": [
+                    {"label": label or ("COUNT" if col == 1 else ""), "value": values[col]}
+                    for col, label in enumerate(labels)
+                ],
+            })
+
+        if panels:
+            pages.append({
+                "key": group.lower().replace(" ", "-"),
+                "title": group,
+                "dashboard_title": f"STOCKTAKE DASHBOARD ({group})",
+                "panels": panels[:3],
+            })
+
+    if not pages:
+        raise ValueError("DASHBOARD sheet does not contain STOCKTAKE DASHBOARD (1PX)")
+    return {"stocktake_pages": pages}
 
 def _build_outbound_summary(rows: list[dict]) -> list[dict]:
     actual_order = {
