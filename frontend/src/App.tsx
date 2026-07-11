@@ -170,7 +170,7 @@ const DEFAULT_DATA_SOURCES: DataSourceSettings = {
   outbound: '/onedrive-dashboard/Outbound.xlsx',
 };
 const DATA_SOURCE_ITEMS: { key: DataSourceKey; label: string; placeholder: string; requiredSheets: string }[] = [
-  { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheets: inbound, put 15' },
+  { key: 'inbound', label: '1. Inbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet beginning with: Inbound Progress' },
   { key: 'pick', label: '2. Pick', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Resuft' },
   { key: 'pick_stocktake', label: '2. Pick Stocktake', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: DASHBOARD' },
   { key: 'outbound', label: '3. Outbound', placeholder: 'Folder path or OneDrive .xlsx link', requiredSheets: 'Sheet: Summary (or HLE + 1 PX)' },
@@ -1205,7 +1205,7 @@ function App() {
                       ))}
                     </div>
                   </div>
-                  <div className="mt-auto shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+                  <div className="mt-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                     <table className="w-full border-collapse table-fixed text-[12px] font-bold text-sidebar dark:text-slate-100">
                       <thead>
                         <tr className="bg-blue-50 dark:bg-slate-700 text-sidebar dark:text-white">

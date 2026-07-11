@@ -51,7 +51,7 @@ SOURCE_FILE_NAMES = {
     "outbound": "Outbound.xlsx",
 }
 SOURCE_REQUIRED_SHEETS = {
-    "inbound": [INBOUND_SHEET_NAME, INBOUND_PUTAWAY_SHEET_NAME],
+    "inbound": [],
     "pick": [PICK_SHEET_NAME],
     "pick_stocktake": [PICK_STOCKTAKE_SHEET_NAME],
     "outbound": [],
@@ -228,18 +228,29 @@ def update_cache():
 
         if data_sources["inbound"]:
             try:
-                inbound_df = read_excel_sheet_from_source(data_sources["inbound"], INBOUND_SHEET_NAME, header=None)
+                inbound_sheet_names = get_excel_sheet_names_from_source(data_sources["inbound"])
+                inbound_progress_sheet = next(
+                    (name for name in reversed(inbound_sheet_names) if name.lower().startswith("inbound progress")),
+                    None,
+                )
+                if not inbound_progress_sheet:
+                    raise ValueError("Workbook does not contain an Inbound Progress sheet")
+
+                inbound_df = read_excel_sheet_from_source(data_sources["inbound"], inbound_progress_sheet, header=None)
                 inbound_receive = parse_inbound_progress_sheet(inbound_df)
                 dashboard_data["inbound"].update(inbound_receive)
+                mapped_sheets = [inbound_progress_sheet]
 
-                inbound_putaway_df = read_excel_sheet_from_source(data_sources["inbound"], INBOUND_PUTAWAY_SHEET_NAME, header=None)
-                inbound_putaway = parse_inbound_putaway_sheet(inbound_putaway_df)
-                dashboard_data["inbound"]["pages"] = [
-                    inbound_receive["pages"][0],
-                    inbound_putaway["page"],
-                ]
+                if INBOUND_PUTAWAY_SHEET_NAME in inbound_sheet_names:
+                    inbound_putaway_df = read_excel_sheet_from_source(data_sources["inbound"], INBOUND_PUTAWAY_SHEET_NAME, header=None)
+                    inbound_putaway = parse_inbound_putaway_sheet(inbound_putaway_df)
+                    dashboard_data["inbound"]["pages"] = [
+                        inbound_receive["pages"][0],
+                        inbound_putaway["page"],
+                    ]
+                    mapped_sheets.append(INBOUND_PUTAWAY_SHEET_NAME)
                 source_status.setdefault("inbound", {})["mapped"] = True
-                source_status.setdefault("inbound", {})["mapped_sheets"] = [INBOUND_SHEET_NAME, INBOUND_PUTAWAY_SHEET_NAME]
+                source_status.setdefault("inbound", {})["mapped_sheets"] = mapped_sheets
             except Exception as exc:
                 source_errors["inbound"] = str(exc)
                 source_status["inbound"] = {
@@ -437,6 +448,13 @@ async def upload_excel_source(source_key: str, client_id: str = Form(...), file:
             for sheet_name in SOURCE_REQUIRED_SHEETS[source_key]
             if sheet_name not in sheet_names
         ]
+        if source_key == "inbound" and not any(
+            name.lower().startswith("inbound progress") for name in sheet_names
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="This file does not match inbound. Required: a sheet beginning with Inbound Progress",
+            )
         if source_key == "outbound":
             has_summary = OUTBOUND_SUMMARY_SHEET_NAME in sheet_names
             has_legacy_sheets = all(
